@@ -2,20 +2,29 @@
 
 ScapePath is a passive OSRS account-progression companion. It reads your locally
 available account state (skills, quests, achievement diaries, inventory, equipment, bank,
-and wealth) and shows it in a side panel, along with a local preview of the exact data a
-future version would synchronize to your ScapePath account.
+and wealth) and shows it in a side panel, along with a preview of the exact data it
+synchronizes to your ScapePath account when you choose to connect.
 
-## Current behavior vs planned
+## How it works
 
-- **Current build (this repository): completely local.** The plugin reads read-only
-  account state through public RuneLite APIs, builds a normalized snapshot, and displays
-  it — plus a "what would be sent" JSON preview — inside RuneLite. **It makes no network
-  requests and transmits nothing.** The **Connect** / **Enable account synchronization**
-  controls are preferences only; they do not authenticate or send anything in this build.
-- **Planned (future version): opt-in HTTPS sync.** A later version will let you connect
-  your ScapePath account and synchronize this snapshot over HTTPS. Syncing will be
-  strictly opt-in, read-only, HTTPS-only, and authenticated with a ScapePath token you
-  enter yourself. Nothing will be transmitted until you explicitly connect. See
+- **Read-only account view.** The plugin reads your account state through public RuneLite
+  APIs, builds a normalized snapshot, and displays it — plus a preview of the exact JSON
+  it would sync — inside RuneLite. It never automates gameplay, sends input, or reads any
+  credential.
+- **Opt-in HTTPS sync to ScapePath.** In the plugin's side panel you can connect your
+  ScapePath account:
+  1. On the ScapePath website Profile, generate a one-time **connection code**.
+  2. Enter that code in the plugin panel and press **Connect**.
+  3. The plugin exchanges the code for a ScapePath **device token** over HTTPS
+     (`POST /api/runelite/link`) and stores only that token locally (never shown again).
+  4. While connected, your snapshot is synced over HTTPS (`POST /api/runelite/sync`,
+     `Authorization: Bearer <device token>`) — automatically (throttled to at most once
+     every few minutes) and via **Sync now**.
+  5. **Disconnect** from the panel (or from the website) revokes the connection.
+- **Nothing is sent until you connect**, only your own account state is ever sent, and the
+  device token is a revocable ScapePath credential — never a RuneScape/Jagex/Google/
+  RuneLite credential, password, cookie, or session token. If the network is unavailable
+  the plugin keeps working locally and retries later; it never blocks the client. See
   [PAYLOAD.md](PAYLOAD.md) for the exact contract and privacy disclosure.
 
 It never collects RuneScape/Jagex, Google, or RuneLite credentials, passwords, or session
@@ -63,10 +72,10 @@ Then in the client:
 
 1. Open the **Configuration** (wrench) panel.
 2. Search **ScapePath** — it appears in the plugin list.
-3. Toggle it on; open its settings to see the **Connection** and **Account Sync**
-   sections.
-4. Toggle **Connect ScapePath** on/off and watch **Status** update
-   (Not connected ⇄ Connected). No network activity occurs.
+3. Toggle it on, then open the **ScapePath** side panel (navigation button).
+4. Under **ScapePath connection**, paste a connection code from the website Profile and
+   press **Connect**, then use **Sync now** / **Disconnect**. The config panel's
+   **Account Sync → Automatic sync** toggle controls periodic background syncing.
 
 ### B. Side-load a jar into a stock RuneLite (developer mode)
 
@@ -80,8 +89,9 @@ Then in the client:
 - Builds cleanly on JDK 11.
 - Plugin appears as **ScapePath** in the config panel and starts/stops without errors.
 - No stack traces on startup/shutdown.
-- No outbound network requests are made by this plugin.
-- Account state is read locally and shown in the panel; nothing is transmitted.
+- Until you connect, no outbound network requests are made by this plugin.
+- Account state is read locally and shown in the panel. Once you connect with a one-time
+  code, your own account snapshot is synced to ScapePath over HTTPS (and only then).
 
 ## What is collected (local only)
 
@@ -103,7 +113,8 @@ Then in the client:
   `null` until the bank is synced — never conflated with zero).
 
 Data is rebuilt on login, item-container changes, and bank open/close, and displayed in
-the ScapePath side-panel. It is never transmitted.
+the ScapePath side-panel. It is transmitted only after you connect (see "How it works"),
+and only ever your own account's state.
 
 ### Bank freshness
 
@@ -131,8 +142,10 @@ com.scapepath.plugin
 │   ├── BankTracker               stateful interface-gated bank cache + freshness
 │   └── DiaryDefinitions          auditable region/tier → varbit table (Karamja special)
 ├── connection
-│   ├── ConnectionState       DISCONNECTED / CONNECTING / CONNECTED / ERROR
-│   └── ConnectionManager     local-only connect/disconnect (no network)
+│   ├── ConnectionState       DISCONNECTED / CONNECTING / CONNECTED / SYNCING / OFFLINE / ERROR
+│   ├── ConnectionManager     link/sync/disconnect lifecycle; dispatches all network off-thread
+│   ├── TokenStore            device-token storage seam (testable)
+│   └── ConfigTokenStore      TokenStore backed by RuneLite ConfigManager (hidden key)
 ├── collector
 │   ├── AccountDataCollector  contract for one snapshot section
 │   ├── CollectorContext      read-only inputs (incl. GameStateAccessor)
@@ -146,7 +159,8 @@ com.scapepath.plugin
 │   ├── BankCollector         BANK section (interface-gated freshness)
 │   └── WealthCollector       WEALTH section (GP on hand, bank GP, est. value)
 ├── snapshot
-│   ├── SnapshotSectionType   14 data categories (Skills, Bank, …)
+│   ├── SnapshotSectionType   14 categories defined; 8 collected today (Identity, Skills,
+│   │                         Quests, Diaries, Inventory, Equipment, Bank, Wealth)
 │   ├── SourceFreshness       COMPLETE / PARTIAL / STALE / UNAVAILABLE
 │   ├── SectionData           marker for typed payloads
 │   ├── CollectedSection      one section + freshness metadata
@@ -168,9 +182,11 @@ com.scapepath.plugin
 ├── transport
 │   ├── JsonWriter            deterministic, reflection-free JSON builder
 │   ├── SnapshotPayloadSerializer  AccountSnapshot → versioned JSON (no HTTP)
-│   └── PayloadPreview        local "what would be sent" description
+│   ├── PayloadPreview        local "what would be sent" description
+│   ├── ScapePathTransport    HTTPS transport seam (link/sync/disconnect)
+│   └── OkHttpScapePathTransport  the ONE networking class (RuneLite-bundled OkHttp, HTTPS)
 └── ui
-    └── ScapePathPanel        local diagnostic side-panel + payload preview (no transmission)
+    └── ScapePathPanel        side panel: connection controls + snapshot view + payload preview
 ```
 
 ## Live updates
@@ -187,9 +203,12 @@ All rebuilds read the client on the client thread.
 ## Privacy & compliance
 
 ScapePath never collects RuneScape / Jagex / Google / RuneLite credentials, passwords, or
-session cookies, never automates gameplay or sends inputs, and this build transmits
-nothing. Future syncing will be opt-in, read-only, HTTPS-only, authenticated with a
-player-entered ScapePath token, and will disclose exactly what is transmitted.
+session cookies, and never automates gameplay or sends inputs. Syncing is **opt-in**
+(nothing is sent until you connect with a one-time code), read-only, HTTPS-only to
+`https://www.scapepath.com`, authenticated with a revocable ScapePath device token, and
+sends only your own account's state. [PAYLOAD.md](PAYLOAD.md) discloses exactly what is
+transmitted. Uses no reflection, native code, `Runtime.exec`, or extra dependencies; the
+device token is stored under a hidden config key and never logged or shown.
 
 ## License
 

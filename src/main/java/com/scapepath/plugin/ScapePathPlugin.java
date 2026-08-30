@@ -15,13 +15,17 @@ import com.scapepath.plugin.collector.InventoryCollector;
 import com.scapepath.plugin.collector.QuestCollector;
 import com.scapepath.plugin.collector.SkillsCollector;
 import com.scapepath.plugin.collector.WealthCollector;
+import com.scapepath.plugin.connection.ConfigTokenStore;
 import com.scapepath.plugin.connection.ConnectionManager;
 import com.scapepath.plugin.connection.ConnectionState;
+import com.scapepath.plugin.connection.TokenStore;
 import com.scapepath.plugin.game.BankTracker;
 import com.scapepath.plugin.game.DiaryDefinitions;
 import com.scapepath.plugin.game.GameStateAccessor;
 import com.scapepath.plugin.game.RuneLiteGameStateAccessor;
 import com.scapepath.plugin.snapshot.SnapshotService;
+import com.scapepath.plugin.transport.OkHttpScapePathTransport;
+import com.scapepath.plugin.transport.ScapePathTransport;
 import com.scapepath.plugin.transport.SnapshotPayloadSerializer;
 import com.scapepath.plugin.ui.ScapePathPanel;
 import java.awt.Color;
@@ -44,7 +48,6 @@ import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
-import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.ClientToolbar;
@@ -53,10 +56,12 @@ import net.runelite.client.ui.NavigationButton;
 /**
  * ScapePath — account progression companion/integration for RuneLite.
  *
- * <p><b>Session 4 (local data foundation):</b> the plugin reads identity, skills,
- * inventory, equipment, interface-gated bank, and derived wealth from the live client and
- * displays them in a local diagnostic panel. It remains fully passive: no gameplay
- * automation, no input, and <b>no network I/O</b>. Nothing leaves the machine.</p>
+ * <p>The plugin reads identity, skills, quests, diaries, inventory, equipment,
+ * interface-gated bank, and derived wealth from the live client and displays them in a
+ * side panel. It remains passive and read-only — no gameplay automation, no input. When
+ * the user explicitly connects their ScapePath account (entering a one-time code), it
+ * syncs the same normalized snapshot over HTTPS via {@link ConnectionManager}; nothing is
+ * transmitted otherwise, and only the user's own account state is ever sent.</p>
  *
  * <p>Responsibilities kept here are lifecycle and orchestration only: registering
  * collectors, subscribing to RuneLite events, and driving snapshot rebuilds on the
@@ -66,7 +71,8 @@ import net.runelite.client.ui.NavigationButton;
 @Slf4j
 @PluginDescriptor(
 	name = "ScapePath",
-	description = "Local, read-only OSRS account progression companion",
+	description = "Read-only OSRS account progression companion; optionally syncs your own "
+		+ "account state to ScapePath over HTTPS after you connect with a one-time code",
 	tags = {"account", "progression", "skills", "quests", "diary", "bank", "scapepath"}
 )
 public class ScapePathPlugin extends Plugin
@@ -136,14 +142,18 @@ public class ScapePathPlugin extends Plugin
 	{
 		// Bind the read-only client seam to its live implementation.
 		binder.bind(GameStateAccessor.class).to(RuneLiteGameStateAccessor.class);
+		// Bind the network transport (OkHttp, RuneLite-bundled) and local token store.
+		binder.bind(ScapePathTransport.class).to(OkHttpScapePathTransport.class);
+		binder.bind(TokenStore.class).to(ConfigTokenStore.class);
 	}
 
 	@Override
 	protected void startUp()
 	{
-		log.debug("ScapePath started (local data build {})", ScapePath.VERSION);
+		log.debug("ScapePath started (build {})", ScapePath.VERSION);
 
-		connectionManager.setStateListener(this::publishStatus);
+		connectionManager.setStateListener(this::onConnectionStateChanged);
+		connectionManager.setSnapshotSupplier(snapshotService::getLatest);
 
 		// Register collectors. Order is irrelevant; each owns one section.
 		collectorRegistry.register(identityCollector);
@@ -155,9 +165,13 @@ public class ScapePathPlugin extends Plugin
 		collectorRegistry.register(bankCollector);
 		collectorRegistry.register(wealthCollector);
 
-		// Diagnostic panel (local only).
+		// Side panel: snapshot view + connection controls.
 		panel = new ScapePathPanel(payloadSerializer);
 		panel.setRefreshHandler(this::requestRefresh);
+		panel.setConnectionHandlers(
+			connectionManager::link,
+			connectionManager::syncNow,
+			connectionManager::disconnect);
 		snapshotService.setListener(panel::update);
 
 		navButton = NavigationButton.builder()
@@ -168,7 +182,8 @@ public class ScapePathPlugin extends Plugin
 			.build();
 		clientToolbar.addNavigation(navButton);
 
-		applyConnectPreference(config.connect());
+		// Restore any prior connection from local storage (no network).
+		connectionManager.restore();
 
 		// Build an initial snapshot on the client thread (reflects current login state).
 		requestRefresh();
@@ -185,8 +200,11 @@ public class ScapePathPlugin extends Plugin
 		snapshotService.setListener(null);
 		panel = null;
 
+		// Detach listeners only. Do NOT disconnect: stopping the plugin (or closing the
+		// client) must not revoke the user's ScapePath link — the token persists so the
+		// connection survives restarts.
 		connectionManager.setStateListener(null);
-		connectionManager.disconnect();
+		connectionManager.setSnapshotSupplier(null);
 		bankTracker.reset();
 		snapshotDirty = false;
 		log.debug("ScapePath stopped");
@@ -283,19 +301,10 @@ public class ScapePathPlugin extends Plugin
 		{
 			snapshotDirty = false;
 			snapshotService.rebuild();
-		}
-	}
-
-	@Subscribe
-	public void onConfigChanged(ConfigChanged event)
-	{
-		if (!ScapePath.CONFIG_GROUP.equals(event.getGroup()))
-		{
-			return;
-		}
-		if (ScapePathConfig.KEY_CONNECT.equals(event.getKey()))
-		{
-			applyConnectPreference(config.connect());
+			// After a rebuild, offer the fresh snapshot to the sync layer. This is
+			// throttled + opt-in inside the manager; it dispatches network work
+			// off-thread and never blocks this client tick.
+			connectionManager.maybeAutoSync(config.syncEnabled());
 		}
 	}
 
@@ -305,21 +314,16 @@ public class ScapePathPlugin extends Plugin
 		clientThread.invoke(snapshotService::rebuild);
 	}
 
-	private void applyConnectPreference(boolean connectRequested)
-	{
-		if (connectRequested)
-		{
-			connectionManager.connect();
-		}
-		else
-		{
-			connectionManager.disconnect();
-		}
-	}
-
-	private void publishStatus(ConnectionState state)
+	/** Reflect connection state into the read-only config status + the side panel. */
+	private void onConnectionStateChanged(ConnectionState state)
 	{
 		configManager.setConfiguration(ScapePath.CONFIG_GROUP, "connectionStatus", state.getDisplayText());
+		final ScapePathPanel p = panel;
+		if (p != null)
+		{
+			p.updateConnection(state, connectionManager.isConnected(),
+				connectionManager.getLastSyncAt(), connectionManager.getLastError());
+		}
 	}
 
 	private static BufferedImage createIcon()

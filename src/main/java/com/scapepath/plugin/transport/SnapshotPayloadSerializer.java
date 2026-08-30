@@ -193,7 +193,13 @@ public class SnapshotPayloadSerializer
 	{
 		w.beginObject();
 		w.name("loggedIn").value(d.isLoggedIn());
-		w.name("accountHash").value(d.getAccountHash());
+		// accountHash is a 64-bit id. Emit it as a STRING (matching the link request) so a
+		// JSON-number round-trip can never lose precision above 2^53 — otherwise the value
+		// the server pins at link time would never equal the value seen at sync time, and
+		// every sync would be rejected as an account mismatch. -1 means "unavailable" and is
+		// emitted as null, which the server treats as "no pin check" (same as an absent hash).
+		final long accountHash = d.getAccountHash();
+		w.name("accountHash").value(accountHash == -1L ? null : String.valueOf(accountHash));
 		w.name("rsn").value(d.getRsn());
 		w.name("accountType").value(d.getAccountType());
 		w.name("world").value(d.getWorld());

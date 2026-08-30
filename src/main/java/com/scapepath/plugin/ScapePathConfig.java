@@ -12,20 +12,19 @@ import net.runelite.client.config.ConfigSection;
 /**
  * ScapePath configuration surface.
  *
- * <p>This establishes the future UX using standard RuneLite config conventions.
- * <b>None of these controls perform authentication or transmit data in Session 1.</b>
- * "Connect" only flips local {@link com.scapepath.plugin.connection.ConnectionState};
- * "Enable account synchronization" only stores a preference.</p>
+ * <p>Connecting and disconnecting are driven from the plugin's side panel (you enter a
+ * one-time code generated on the ScapePath website), so there is no "connect" toggle
+ * here. This config exposes only a read-only status line and the automatic-sync
+ * preference. The device token is stored under a hidden key and is never shown here.</p>
  */
 @ConfigGroup(ScapePath.CONFIG_GROUP)
 public interface ScapePathConfig extends Config
 {
-	String KEY_CONNECT = "connect";
 	String KEY_SYNC_ENABLED = "syncEnabled";
 
 	@ConfigSection(
 		name = "Connection",
-		description = "Connect this RuneLite client to your ScapePath account",
+		description = "Connect this RuneLite client to your ScapePath account (use the side panel)",
 		position = 0
 	)
 	String connectionSection = "connection";
@@ -40,7 +39,7 @@ public interface ScapePathConfig extends Config
 	@ConfigItem(
 		keyName = "connectionStatus",
 		name = "Status",
-		description = "Current ScapePath connection status (read-only)",
+		description = "Current ScapePath connection status (read-only). Connect from the side panel.",
 		section = connectionSection,
 		position = 0
 	)
@@ -51,30 +50,17 @@ public interface ScapePathConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = KEY_CONNECT,
-		name = "Connect ScapePath",
-		description = "Intend to connect this client to your ScapePath account. "
-			+ "This build is local-only: turning it on does not authenticate and sends "
-			+ "nothing over the network. No account data leaves your machine.",
-		section = connectionSection,
-		position = 1
-	)
-	default boolean connect()
-	{
-		return false;
-	}
-
-	@ConfigItem(
 		keyName = KEY_SYNC_ENABLED,
-		name = "Enable account synchronization",
-		description = "Preference for whether account progression may be synchronized to "
-			+ "ScapePath in a future version. This build transmits nothing; account state "
-			+ "is only read locally and shown in the plugin panel.",
+		name = "Automatic sync",
+		description = "When on and connected, ScapePath periodically syncs your verified account "
+			+ "state (skills, quests, diaries, inventory, equipment, bank, wealth) over HTTPS. "
+			+ "Turn off to sync only when you press \"Sync now\". Nothing but your own account "
+			+ "state is ever sent; no passwords, cookies or Jagex credentials.",
 		section = accountSyncSection,
 		position = 0
 	)
 	default boolean syncEnabled()
 	{
-		return false;
+		return true;
 	}
 }

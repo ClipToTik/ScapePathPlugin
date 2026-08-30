@@ -25,10 +25,25 @@ public final class ScapePath
 	public static final String CONFIG_GROUP = "scapepath";
 
 	/**
-	 * Plugin version reported in future snapshots. Kept in sync with
+	 * Base URL of the ScapePath API. HTTPS only. The plugin talks to exactly this
+	 * origin and nowhere else; the three integration endpoints hang off it
+	 * ({@code /api/runelite/link}, {@code /sync}, {@code /disconnect}).
+	 */
+	public static final String API_BASE_URL = "https://www.scapepath.com";
+
+	/**
+	 * ConfigManager key under which the opaque ScapePath device token is stored
+	 * locally. Deliberately NOT a {@code @ConfigItem}, so it never renders in the
+	 * settings UI and is never shown to the user after linking. It is a revocable,
+	 * ScapePath-issued credential — never a Jagex/RuneLite credential.
+	 */
+	public static final String KEY_DEVICE_TOKEN = "deviceToken";
+
+	/**
+	 * Plugin version reported in snapshots. Kept in sync with
 	 * {@code runelite-plugin.properties} at release time.
 	 */
-	public static final String VERSION = "0.1.0-SNAPSHOT";
+	public static final String VERSION = "0.2.1";
 
 	/**
 	 * Version of the transport payload contract emitted by the serializer. This is a

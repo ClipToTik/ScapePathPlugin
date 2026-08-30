@@ -1,9 +1,10 @@
 # ScapePath payload contract & privacy disclosure
 
-**Status: local-only build — nothing is transmitted.** This document describes the JSON
-payload that a **future, opt-in** version of the plugin would send to a ScapePath HTTPS
-ingestion API. The current build contains **no network code** and sends nothing; the
-payload below is only built locally and shown in the plugin panel as a preview.
+**Status: opt-in HTTPS sync.** This document describes the JSON payload the plugin sends
+to the ScapePath ingestion API (`POST /api/runelite/sync`) **only after** you explicitly
+connect your ScapePath account with a one-time code. Until you connect, nothing is
+transmitted; the payload below is also shown locally in the plugin panel as a preview. The
+same payload is produced by the deterministic serializer whether or not you sync.
 
 ## Schema
 
@@ -18,7 +19,7 @@ payload below is only built locally and shown in the plugin panel as a preview.
 ```json
 {
   "schemaVersion": 1,
-  "pluginVersion": "0.1.0-SNAPSHOT",
+  "pluginVersion": "0.2.1",
   "timestamp": "2026-08-29T21:40:31Z",
   "account": { "rsn": "Zezima" },
   "sections": {
@@ -47,7 +48,7 @@ payload below is only built locally and shown in the plugin panel as a preview.
   - opened (even empty) → `freshness: COMPLETE`, `data: { items: [], … }`
   - opened then closed → `freshness: STALE`, `data: { … }`, original `collectedAt`
 
-## DATA WE INTEND TO SEND (account state only)
+## DATA WE SEND (account state only, after you connect)
 
 RSN · account hash · account type · world · per-skill level & XP, total level/XP, combat
 level · every quest (stable id, name, state) + quest points + counts · every achievement
@@ -70,10 +71,16 @@ never contains `password`, `cookie`, `token`, `oauth`, `session`, `credential`, 
 `accountHash` is RuneLite's stable per-account identifier
 (`OAuthApi.getAccountHash()`; `-1` when logged out). It is **not a credential** and grants
 no access to the account. Its purpose is to let ScapePath key progression to the correct
-account even if the RSN is changed. The future ingestion API needs a stable account key;
+account even if the RSN is changed. The ingestion API needs a stable account key;
 `accountHash` fills that role. If the server later prefers to key on RSN alone or a
 server-issued id, `accountHash` can be dropped from the contract (a `schemaVersion` bump)
 — it is included deliberately, not merely because RuneLite exposes it.
+
+It is serialized as a **JSON string** (e.g. `"6291812345678901234"`), never a bare number,
+so a 64-bit value above 2^53 survives the round-trip without precision loss. The value the
+server pins when redeeming the link code and the value it sees on every sync are then
+identical; emitting it as a number would round both differently and every sync would be
+rejected as an account mismatch. `-1` (logged out) is emitted as `null`.
 
 ## Measured payload sizes
 

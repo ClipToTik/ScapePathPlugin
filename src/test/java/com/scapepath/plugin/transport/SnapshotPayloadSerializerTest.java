@@ -104,11 +104,39 @@ public class SnapshotPayloadSerializerTest
 			new IdentityData(true, 999L, "Zezima", "NORMAL", 330))).build();
 		JsonObject id = sections(serializer.toJson(snap)).getAsJsonObject("identity").getAsJsonObject("data");
 
-		assertEquals(999L, id.get("accountHash").getAsLong());
+		// accountHash MUST be a JSON string, not a number, to avoid >2^53 precision loss.
+		assertTrue("accountHash must be a JSON string", id.get("accountHash").getAsJsonPrimitive().isString());
+		assertEquals("999", id.get("accountHash").getAsString());
 		assertEquals("Zezima", id.get("rsn").getAsString());
 		assertEquals("NORMAL", id.get("accountType").getAsString());
 		assertEquals(330, id.get("world").getAsInt());
 		assertTrue(id.get("loggedIn").getAsBoolean());
+	}
+
+	@Test
+	public void accountHashPreservesFullPrecisionAsString()
+	{
+		// A real 64-bit accountHash exceeds 2^53; it must round-trip exactly as a string so
+		// the server's pinned value (from link) equals the value seen at sync.
+		final long bigHash = 6291812345678901234L;
+		AccountSnapshot snap = base().section(SnapshotSectionType.IDENTITY, section(
+			SnapshotSectionType.IDENTITY, SourceFreshness.COMPLETE, T,
+			new IdentityData(true, bigHash, "Zezima", "NORMAL", 330))).build();
+		JsonObject id = sections(serializer.toJson(snap)).getAsJsonObject("identity").getAsJsonObject("data");
+
+		assertTrue(id.get("accountHash").getAsJsonPrimitive().isString());
+		assertEquals(String.valueOf(bigHash), id.get("accountHash").getAsString());
+	}
+
+	@Test
+	public void accountHashUnavailableEmitsNull()
+	{
+		AccountSnapshot snap = base().section(SnapshotSectionType.IDENTITY, section(
+			SnapshotSectionType.IDENTITY, SourceFreshness.COMPLETE, T,
+			new IdentityData(true, -1L, "Zezima", "NORMAL", 330))).build();
+		JsonObject id = sections(serializer.toJson(snap)).getAsJsonObject("identity").getAsJsonObject("data");
+
+		assertTrue("unavailable accountHash must be JSON null", id.get("accountHash").isJsonNull());
 	}
 
 	@Test

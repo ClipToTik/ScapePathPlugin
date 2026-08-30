@@ -15,10 +15,14 @@ public enum ConnectionState
 {
 	/** Not connected. Default state. */
 	DISCONNECTED("Not connected"),
-	/** A connection attempt is in progress (future: token validation over HTTPS). */
+	/** A connection attempt is in progress (link-code exchange over HTTPS). */
 	CONNECTING("Connecting…"),
 	/** Connected to ScapePath. */
 	CONNECTED("Connected"),
+	/** Connected and a snapshot upload is in flight. */
+	SYNCING("Syncing…"),
+	/** Connected but the last sync could not reach ScapePath (network down). */
+	OFFLINE("Offline — will retry"),
 	/** The last connection attempt failed. */
 	ERROR("Connection error");
 
