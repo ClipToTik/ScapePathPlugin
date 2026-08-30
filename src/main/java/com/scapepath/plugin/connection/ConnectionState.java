@@ -7,9 +7,10 @@ package com.scapepath.plugin.connection;
 /**
  * Local, client-side view of the ScapePath connection.
  *
- * <p>In Session 1 these states are purely local UI state. No state here implies
- * any network activity has occurred &mdash; the transport layer is intentionally
- * unimplemented.</p>
+ * <p>These states drive the side-panel connection UI and reflect the real
+ * {@link ConnectionManager} lifecycle: {@link #CONNECTING}/{@link #SYNCING} occur only
+ * during an actual HTTPS exchange, and {@link #DISCONNECTED} means no device token is
+ * held and no authenticated traffic is sent.</p>
  */
 public enum ConnectionState
 {

@@ -22,11 +22,11 @@
 
 ```
 displayName=ScapePath
-author=ScapePath            # RECOMMENDED: set to the maintainer's GitHub username
-description=ScapePath account progression companion/integration for RuneLite
-tags=account,progression,sync,companion,scapepath
-plugins=com.scapepath.plugin.ScapePathPlugin
+author=Magic Muck
+description=Read-only OSRS account progression companion: view your skills, quests, achievement diaries, inventory, equipment, bank, and wealth, and optionally sync them to your ScapePath account
+tags=account,progression,skills,quests,diary,bank,sync,scapepath
 version=
+plugins=com.scapepath.plugin.ScapePathPlugin
 build=standard
 ```
 
@@ -53,10 +53,11 @@ commit=0000000000000000000000000000000000000000
 - [x] BSD 2-Clause `LICENSE` at root.
 - [x] `runelite-plugin.properties` complete; `build=standard`; `latest.release`.
 - [x] `icon.png` (48×48) at root, no copyrighted artwork.
-- [x] README describes features and clearly separates current (local) vs planned (sync).
-- [x] No network / reflection / native / exec / extra dependencies (re-audited this session).
-- [ ] Set `author=` to the maintainer's GitHub username.
-- [ ] Decide: submit network-free build, or add HTTPS transport first (see Session 7 report §F).
+- [x] README describes features and accurately documents opt-in HTTPS sync vs local view.
+- [x] No reflection / native / exec / extra dependencies; networking uses RuneLite's
+      bundled OkHttp, HTTPS-only to the fixed ScapePath origin (re-audited this session).
+- [x] `author=Magic Muck` set in `runelite-plugin.properties`.
+- [x] Opt-in HTTPS transport implemented (link/sync/disconnect).
 - [ ] Create a **public** GitHub repo and push (requires explicit authorization; this dir
       is not yet a git repository).
 - [ ] Pick the release commit hash and fill the marker file above.
@@ -64,10 +65,12 @@ commit=0000000000000000000000000000000000000000
 
 ## Notes for the reviewer (draft PR description)
 
-> ScapePath is a passive, read-only OSRS account-progression companion. This build is
-> **entirely local**: it reads account state via public RuneLite APIs and displays it,
-> plus a local preview of the data a future opt-in HTTPS sync would send. It makes **no
-> network requests**, collects **no credentials/passwords/cookies**, performs **no
-> automation or input**, and uses **no reflection or native code**. Only the local
-> player's own account state is read (never other players' data). See `PAYLOAD.md` for the
-> full data disclosure.
+> ScapePath is a passive, read-only OSRS account-progression companion. It reads the local
+> player's own account state via public RuneLite APIs and displays it, plus a local preview
+> of the exact payload that is synced. Syncing to ScapePath is **opt-in over HTTPS**: no
+> network request is made until the user connects with a one-time code, and the only
+> destination is the fixed ScapePath production origin (`https://www.scapepath.com`).
+> It collects **no credentials/passwords/cookies**, performs **no automation or input**,
+> and uses **no reflection or native code**. Only the local player's own account state is
+> read (never other players' data). Network I/O uses RuneLite's bundled OkHttp off the
+> client thread. See `PAYLOAD.md` for the full data disclosure.
