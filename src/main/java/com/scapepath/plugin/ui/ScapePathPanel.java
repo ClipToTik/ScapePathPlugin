@@ -20,15 +20,16 @@ import com.scapepath.plugin.snapshot.data.SkillsData;
 import com.scapepath.plugin.snapshot.data.WealthData;
 import com.scapepath.plugin.transport.PayloadPreview;
 import com.scapepath.plugin.transport.SnapshotPayloadSerializer;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.awt.BorderLayout;
+import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.GridLayout;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import javax.swing.BorderFactory;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
@@ -37,78 +38,49 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
+import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.ui.PluginPanel;
 
 /**
- * Local, development-oriented diagnostic panel proving the plugin reads account state.
+ * Local diagnostic side panel that renders the cached {@link AccountSnapshot} and a local
+ * preview of the snapshot payload. Strictly local: it transmits nothing.
  *
- * <p>Strictly local: it renders only the cached {@link AccountSnapshot} and transmits
- * nothing. All mutation happens on the Swing EDT.</p>
+ * <p>The panel uses RuneLite's native {@link PluginPanel} wrapping (fixed sidebar width,
+ * vertical scrollbar as-needed, no horizontal scroll) so it behaves like a conventional
+ * RuneLite side panel and never distorts the game viewport. Content is a single scrolling
+ * column of clearly-headed sections. All mutation happens on the Swing EDT.</p>
  */
 public class ScapePathPanel extends PluginPanel
 {
-	private final JLabel statusLabel = new JLabel();
-	private final JPanel identityPanel = new JPanel();
-	private final JPanel skillsPanel = new JPanel();
-	private final JPanel extrasPanel = new JPanel();
-	private final JPanel syncPanel = new JPanel();
-
 	private final SnapshotPayloadSerializer serializer;
 	private AccountSnapshot lastSnapshot;
+
+	private final JLabel statusLabel = new JLabel();
+	/** Holds the dynamic sections; rebuilt on each snapshot update. */
+	private final JPanel body = new JPanel();
 
 	private Runnable refreshHandler = () -> { };
 
 	public ScapePathPanel(SnapshotPayloadSerializer serializer)
 	{
-		super(false);
+		// wrap=true: RuneLite provides the scroll pane, fixed width, and viewport-managed
+		// height. Do NOT override the layout/border it sets up.
+		super(true);
 		this.serializer = serializer;
-		setLayout(new BorderLayout());
-		setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
 
-		final JPanel content = new JPanel();
-		content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
-
-		content.add(title("ScapePath (local only)"));
-		content.add(statusLabel);
-		content.add(sectionSpacer());
+		add(heading("ScapePath"));
+		add(separator());
+		add(statusLabel);
 
 		final JButton refreshButton = new JButton("Refresh now");
 		refreshButton.addActionListener(e -> refreshHandler.run());
-		refreshButton.setAlignmentX(Component.LEFT_ALIGNMENT);
-		content.add(refreshButton);
-		content.add(sectionSpacer());
+		add(refreshButton);
 
-		// Local "what would be sent" preview. Nothing is transmitted.
-		content.add(title("ScapePath Account Sync"));
-		syncPanel.setLayout(new BoxLayout(syncPanel, BoxLayout.Y_AXIS));
-		syncPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
-		content.add(syncPanel);
-		final JButton viewJsonButton = new JButton("View payload JSON");
-		viewJsonButton.addActionListener(e -> showPayloadJson());
-		viewJsonButton.setAlignmentX(Component.LEFT_ALIGNMENT);
-		content.add(viewJsonButton);
-		content.add(sectionSpacer());
-
-		content.add(title("Account"));
-		identityPanel.setLayout(new BoxLayout(identityPanel, BoxLayout.Y_AXIS));
-		identityPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
-		content.add(identityPanel);
-		content.add(sectionSpacer());
-
-		// Inventory / Equipment / Bank / Wealth diagnostics.
-		extrasPanel.setLayout(new BoxLayout(extrasPanel, BoxLayout.Y_AXIS));
-		extrasPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
-		content.add(extrasPanel);
-		content.add(sectionSpacer());
-
-		content.add(title("Skills"));
-		skillsPanel.setLayout(new GridLayout(0, 2, 4, 2));
-		skillsPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
-		content.add(skillsPanel);
-
-		add(content, BorderLayout.NORTH);
+		body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
+		body.setOpaque(false);
+		add(body);
 
 		renderEmpty();
 	}
@@ -128,10 +100,7 @@ public class ScapePathPanel extends PluginPanel
 	private void render(AccountSnapshot snapshot)
 	{
 		this.lastSnapshot = snapshot;
-		identityPanel.removeAll();
-		skillsPanel.removeAll();
-		extrasPanel.removeAll();
-		syncPanel.removeAll();
+		body.removeAll();
 
 		if (snapshot == null)
 		{
@@ -139,84 +108,104 @@ public class ScapePathPanel extends PluginPanel
 			return;
 		}
 
-		renderSyncPreview(snapshot);
-
 		final CollectedSection identity = snapshot.getSection(SnapshotSectionType.IDENTITY);
-		final CollectedSection skills = snapshot.getSection(SnapshotSectionType.SKILLS);
-
 		final boolean loggedIn = identity != null && identity.getData() instanceof IdentityData;
-		statusLabel.setText(loggedIn ? "Status: Local only — logged in" : "Status: Local only — not logged in");
+		statusLabel.setText(loggedIn ? "Local only — logged in" : "Local only — not logged in");
 
-		if (loggedIn)
-		{
-			final IdentityData id = (IdentityData) identity.getData();
-			identityPanel.add(kv("RSN", id.getRsn() == null ? "-" : id.getRsn()));
-			identityPanel.add(kv("World", String.valueOf(id.getWorld())));
-			identityPanel.add(kv("Type", id.getAccountType() == null ? "-" : id.getAccountType()));
-		}
-		else
-		{
-			identityPanel.add(new JLabel("Not logged in"));
-		}
-
-		if (skills != null && skills.getData() instanceof SkillsData)
-		{
-			final SkillsData sd = (SkillsData) skills.getData();
-			identityPanel.add(kv("Combat", String.valueOf(sd.getCombatLevel())));
-			identityPanel.add(kv("Total level", String.valueOf(sd.getTotalLevel())));
-			for (SkillData skill : sd.getSkills())
-			{
-				skillsPanel.add(new JLabel(skill.getName()));
-				skillsPanel.add(new JLabel(String.valueOf(skill.getLevel())));
-			}
-		}
-		else
-		{
-			skillsPanel.add(new JLabel("-"));
-			skillsPanel.add(new JLabel(""));
-		}
-
+		renderAccount(snapshot, loggedIn);
+		renderSkills(snapshot);
 		renderQuests(snapshot);
 		renderDiaries(snapshot);
 		renderInventory(snapshot);
 		renderEquipment(snapshot);
-		renderWealth(snapshot);
 		renderBank(snapshot);
+		renderWealth(snapshot);
+		renderSnapshot(snapshot);
 
-		revalidate();
-		repaint();
+		body.revalidate();
+		body.repaint();
+	}
+
+	private void renderEmpty()
+	{
+		statusLabel.setText("Local only — no snapshot yet");
+		body.removeAll();
+		body.add(sectionHeader("Account"));
+		body.add(note("Not logged in."));
+		body.add(sectionHeader("Snapshot"));
+		body.add(note("Nothing is transmitted. Log in to view your local snapshot."));
+		body.revalidate();
+		body.repaint();
+	}
+
+	// --- Sections ---------------------------------------------------------------------
+
+	private void renderAccount(AccountSnapshot snapshot, boolean loggedIn)
+	{
+		body.add(sectionHeader("Account"));
+		if (!loggedIn)
+		{
+			body.add(note("Not logged in."));
+			return;
+		}
+		final IdentityData id = (IdentityData)
+			snapshot.getSection(SnapshotSectionType.IDENTITY).getData();
+		body.add(kv("RSN", id.getRsn() == null ? "-" : id.getRsn()));
+		body.add(kv("World", String.valueOf(id.getWorld())));
+		body.add(kv("Type", id.getAccountType() == null ? "-" : id.getAccountType()));
+	}
+
+	private void renderSkills(AccountSnapshot snapshot)
+	{
+		body.add(sectionHeader("Skills"));
+		final CollectedSection s = snapshot.getSection(SnapshotSectionType.SKILLS);
+		if (s == null || !(s.getData() instanceof SkillsData))
+		{
+			body.add(note("Not available."));
+			return;
+		}
+		final SkillsData sd = (SkillsData) s.getData();
+		body.add(kv("Combat", String.valueOf(sd.getCombatLevel())));
+		body.add(kv("Total level", String.valueOf(sd.getTotalLevel())));
+
+		final JPanel grid = new JPanel(new GridLayout(0, 2, 8, 2));
+		grid.setOpaque(false);
+		grid.setAlignmentX(Component.LEFT_ALIGNMENT);
+		for (SkillData skill : sd.getSkills())
+		{
+			grid.add(mutedLabel(skill.getName()));
+			final JLabel lvl = new JLabel(String.valueOf(skill.getLevel()), SwingConstants.RIGHT);
+			grid.add(lvl);
+		}
+		body.add(grid);
 	}
 
 	private void renderQuests(AccountSnapshot snapshot)
 	{
-		extrasPanel.add(title("Quests"));
+		body.add(sectionHeader("Quests"));
 		final CollectedSection s = snapshot.getSection(SnapshotSectionType.QUESTS);
 		if (s != null && s.getData() instanceof QuestsData)
 		{
 			final QuestsData q = (QuestsData) s.getData();
-			extrasPanel.add(kv("Complete", q.getCompletedCount() + " / " + q.getTotalCount()));
-			extrasPanel.add(kv("Quest points", String.valueOf(q.getQuestPoints())));
+			body.add(kv("Complete", q.getCompletedCount() + " / " + q.getTotalCount()));
+			body.add(kv("Quest points", String.valueOf(q.getQuestPoints())));
 		}
 		else
 		{
-			extrasPanel.add(new JLabel("Not available"));
+			body.add(note("Not available."));
 		}
-		extrasPanel.add(sectionSpacer());
 	}
 
 	private void renderDiaries(AccountSnapshot snapshot)
 	{
-		extrasPanel.add(title("Achievement Diaries"));
+		body.add(sectionHeader("Achievement Diaries"));
 		final CollectedSection s = snapshot.getSection(SnapshotSectionType.ACHIEVEMENT_DIARIES);
 		if (s == null || !(s.getData() instanceof AchievementDiaryData))
 		{
-			extrasPanel.add(new JLabel("Not available"));
-			extrasPanel.add(sectionSpacer());
+			body.add(note("Not available."));
 			return;
 		}
-
 		final AchievementDiaryData d = (AchievementDiaryData) s.getData();
-		// Per-tier completed / total across all regions.
 		final Map<String, int[]> perTier = new LinkedHashMap<>();
 		perTier.put("Easy", new int[2]);
 		perTier.put("Medium", new int[2]);
@@ -236,107 +225,94 @@ public class ScapePathPanel extends PluginPanel
 		}
 		for (Map.Entry<String, int[]> e : perTier.entrySet())
 		{
-			extrasPanel.add(kv(e.getKey(), e.getValue()[0] + " / " + e.getValue()[1]));
+			body.add(kv(e.getKey(), e.getValue()[0] + " / " + e.getValue()[1]));
 		}
-		extrasPanel.add(kv("Total tiers", d.getCompletedTiers() + " / " + d.getTotalTiers()));
-		extrasPanel.add(sectionSpacer());
+		body.add(kv("Total tiers", d.getCompletedTiers() + " / " + d.getTotalTiers()));
 	}
 
 	private void renderInventory(AccountSnapshot snapshot)
 	{
-		extrasPanel.add(title("Inventory"));
+		body.add(sectionHeader("Inventory"));
 		final CollectedSection s = snapshot.getSection(SnapshotSectionType.INVENTORY);
 		if (s != null && s.getData() instanceof InventoryData)
 		{
-			extrasPanel.add(kv("Occupied slots", ((InventoryData) s.getData()).getOccupiedSlots() + " / 28"));
+			body.add(kv("Occupied slots", ((InventoryData) s.getData()).getOccupiedSlots() + " / 28"));
 		}
 		else
 		{
-			extrasPanel.add(new JLabel("Not available"));
+			body.add(note("Not available."));
 		}
-		extrasPanel.add(sectionSpacer());
 	}
 
 	private void renderEquipment(AccountSnapshot snapshot)
 	{
-		extrasPanel.add(title("Equipment"));
+		body.add(sectionHeader("Equipment"));
 		final CollectedSection s = snapshot.getSection(SnapshotSectionType.EQUIPMENT);
 		if (s != null && s.getData() instanceof EquipmentData)
 		{
-			extrasPanel.add(kv("Equipped items", String.valueOf(((EquipmentData) s.getData()).getItems().size())));
+			body.add(kv("Equipped items", String.valueOf(((EquipmentData) s.getData()).getItems().size())));
 		}
 		else
 		{
-			extrasPanel.add(new JLabel("Not available"));
+			body.add(note("Not available."));
 		}
-		extrasPanel.add(sectionSpacer());
-	}
-
-	private void renderWealth(AccountSnapshot snapshot)
-	{
-		extrasPanel.add(title("Wealth"));
-		final CollectedSection s = snapshot.getSection(SnapshotSectionType.WEALTH);
-		if (s != null && s.getData() instanceof WealthData)
-		{
-			final WealthData w = (WealthData) s.getData();
-			extrasPanel.add(kv("GP on hand", formatGp(w.getGpOnHand())));
-			extrasPanel.add(kv("Bank GP", w.getBankGp() == null ? "—" : formatGp(w.getBankGp())));
-			extrasPanel.add(kv("Est. bank value",
-				w.getEstimatedBankValue() == null ? "—" : "~" + formatGp(w.getEstimatedBankValue())));
-		}
-		else
-		{
-			extrasPanel.add(new JLabel("Not available"));
-		}
-		extrasPanel.add(sectionSpacer());
 	}
 
 	private void renderBank(AccountSnapshot snapshot)
 	{
-		extrasPanel.add(title("Bank"));
+		body.add(sectionHeader("Bank"));
 		final CollectedSection s = snapshot.getSection(SnapshotSectionType.BANK);
 		final boolean synced = s != null && s.getData() instanceof BankData;
 		if (!synced)
 		{
-			extrasPanel.add(new JLabel("Status: Not synced"));
-			extrasPanel.add(new JLabel("Open your bank to sync it."));
+			body.add(note("Not synced — open your bank to sync it."));
 			return;
 		}
-
 		final BankData bank = (BankData) s.getData();
 		final boolean current = s.getFreshness() == SourceFreshness.COMPLETE;
-		extrasPanel.add(kv("Status", current ? "Synced (current)" : "Cached (stale)"));
-		extrasPanel.add(kv("Last opened", relativeTime(s.getCollectedAt())));
-		extrasPanel.add(kv("Items", String.valueOf(bank.getUniqueItems())));
-		extrasPanel.add(kv("Est. value", "~" + formatGp(bank.getEstimatedValue())));
+		body.add(kv("Status", current ? "Synced (current)" : "Cached (stale)"));
+		body.add(kv("Last opened", relativeTime(s.getCollectedAt())));
+		body.add(kv("Items", String.valueOf(bank.getUniqueItems())));
+		body.add(kv("Est. value", "~" + formatGp(bank.getEstimatedValue())));
 	}
 
-	private void renderEmpty()
+	private void renderWealth(AccountSnapshot snapshot)
 	{
-		statusLabel.setText("Status: Local only — no snapshot yet");
-		identityPanel.add(new JLabel("Not logged in"));
-		extrasPanel.removeAll();
-		syncPanel.removeAll();
-		syncPanel.add(new JLabel("Nothing is currently being transmitted."));
-		skillsPanel.add(new JLabel("-"));
-		skillsPanel.add(new JLabel(""));
+		body.add(sectionHeader("Wealth"));
+		final CollectedSection s = snapshot.getSection(SnapshotSectionType.WEALTH);
+		if (s != null && s.getData() instanceof WealthData)
+		{
+			final WealthData w = (WealthData) s.getData();
+			body.add(kv("GP on hand", formatGp(w.getGpOnHand())));
+			body.add(kv("Bank GP", w.getBankGp() == null ? "—" : formatGp(w.getBankGp())));
+			body.add(kv("Est. bank value",
+				w.getEstimatedBankValue() == null ? "—" : "~" + formatGp(w.getEstimatedBankValue())));
+		}
+		else
+		{
+			body.add(note("Not available."));
+		}
 	}
 
-	private void renderSyncPreview(AccountSnapshot snapshot)
+	private void renderSnapshot(AccountSnapshot snapshot)
 	{
+		body.add(sectionHeader("Snapshot"));
 		final PayloadPreview preview = serializer.preview(snapshot);
 
-		syncPanel.add(new JLabel("Nothing is currently being transmitted."));
-		syncPanel.add(new JLabel("Future sync would include:"));
-		for (PayloadPreview.SectionSummary s : preview.getSections())
+		body.add(note("Nothing is transmitted. This is a local preview only."));
+		body.add(kv("Schema version", String.valueOf(preview.getSchemaVersion())));
+		body.add(kv("Plugin version", preview.getPluginVersion()));
+		body.add(kv("Payload size", formatBytes(preview.getByteSize())));
+		for (PayloadPreview.SectionSummary sum : preview.getSections())
 		{
-			syncPanel.add(kv(s.getKey(), s.getFreshness()));
+			body.add(kv(sum.getKey(), sum.getFreshness()));
 		}
-		syncPanel.add(sectionSpacer());
-		syncPanel.add(kv("Schema version", String.valueOf(preview.getSchemaVersion())));
-		syncPanel.add(kv("Plugin version", preview.getPluginVersion()));
-		syncPanel.add(kv("Snapshot", preview.getTimestamp() == null ? "-" : preview.getTimestamp()));
-		syncPanel.add(kv("Payload size", formatBytes(preview.getByteSize())));
+
+		final JButton viewJsonButton = new JButton("View payload JSON");
+		viewJsonButton.setAlignmentX(Component.LEFT_ALIGNMENT);
+		viewJsonButton.addActionListener(e -> showPayloadJson());
+		body.add(spacer(6));
+		body.add(viewJsonButton);
 	}
 
 	private void showPayloadJson()
@@ -356,11 +332,13 @@ public class ScapePathPanel extends PluginPanel
 			JOptionPane.PLAIN_MESSAGE);
 	}
 
+	// --- Formatting helpers (unchanged behavior) --------------------------------------
+
 	private static String formatBytes(int bytes)
 	{
 		if (bytes >= 1024)
 		{
-			return String.format("%.1f KB (%,d bytes)", bytes / 1024.0, bytes);
+			return String.format("%.1f KB", bytes / 1024.0);
 		}
 		return bytes + " bytes";
 	}
@@ -403,30 +381,75 @@ public class ScapePathPanel extends PluginPanel
 		return hours + (hours == 1 ? " hour ago" : " hours ago");
 	}
 
-	private static JLabel title(String text)
+	// --- Small UI building blocks -----------------------------------------------------
+
+	/** Top-level panel heading in the brand colour. */
+	private static JLabel heading(String text)
 	{
+		final JLabel label = new JLabel(text);
+		label.setFont(label.getFont().deriveFont(Font.BOLD, 16f));
+		label.setForeground(ColorScheme.BRAND_ORANGE);
+		return label;
+	}
+
+	/** A thin horizontal divider under the heading. */
+	private static Component separator()
+	{
+		final JPanel line = new JPanel();
+		line.setBackground(ColorScheme.MEDIUM_GRAY_COLOR);
+		line.setMinimumSize(new Dimension(0, 1));
+		line.setPreferredSize(new Dimension(PluginPanel.PANEL_WIDTH, 1));
+		return line;
+	}
+
+	/** A bold section header stacked in the body; adds a little space above. */
+	private static Component sectionHeader(String text)
+	{
+		final JPanel wrap = new JPanel(new BorderLayout());
+		wrap.setOpaque(false);
+		wrap.setBorder(BorderFactory.createEmptyBorder(10, 0, 3, 0));
+		wrap.setAlignmentX(Component.LEFT_ALIGNMENT);
 		final JLabel label = new JLabel(text);
 		label.setFont(label.getFont().deriveFont(Font.BOLD));
 		label.setForeground(ColorScheme.BRAND_ORANGE);
+		wrap.add(label, BorderLayout.WEST);
+		// Cap height so BoxLayout never stretches the header vertically.
+		wrap.setMaximumSize(new Dimension(Integer.MAX_VALUE, label.getPreferredSize().height + 13));
+		return wrap;
+	}
+
+	/** A key (left) / value (right) row that fits the fixed panel width. */
+	private static Component kv(String key, String value)
+	{
+		final JPanel row = new JPanel(new BorderLayout(6, 0));
+		row.setOpaque(false);
+		row.setAlignmentX(Component.LEFT_ALIGNMENT);
+		final JLabel k = mutedLabel(key);
+		final JLabel v = new JLabel(value, SwingConstants.RIGHT);
+		row.add(k, BorderLayout.WEST);
+		row.add(v, BorderLayout.CENTER);
+		// Never let a row demand more than one line of height from BoxLayout.
+		row.setMaximumSize(new Dimension(Integer.MAX_VALUE, v.getPreferredSize().height + 2));
+		return row;
+	}
+
+	private static JLabel mutedLabel(String text)
+	{
+		final JLabel label = new JLabel(text);
+		label.setForeground(Color.LIGHT_GRAY);
+		return label;
+	}
+
+	private static Component note(String text)
+	{
+		final JLabel label = new JLabel(text);
+		label.setForeground(Color.LIGHT_GRAY);
 		label.setAlignmentX(Component.LEFT_ALIGNMENT);
 		return label;
 	}
 
-	private static JPanel kv(String key, String value)
+	private static Component spacer(int height)
 	{
-		final JPanel row = new JPanel(new BorderLayout());
-		row.add(new JLabel(key), BorderLayout.WEST);
-		final JLabel v = new JLabel(value);
-		row.add(v, BorderLayout.EAST);
-		row.setAlignmentX(Component.LEFT_ALIGNMENT);
-		return row;
-	}
-
-	private static Component sectionSpacer()
-	{
-		final JPanel spacer = new JPanel();
-		spacer.setPreferredSize(new java.awt.Dimension(1, 8));
-		spacer.setAlignmentX(Component.LEFT_ALIGNMENT);
-		return spacer;
+		return javax.swing.Box.createVerticalStrut(height);
 	}
 }
