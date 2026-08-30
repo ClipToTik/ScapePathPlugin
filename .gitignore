@@ -1,0 +1,36 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Java
+*.class
+bin/
+out/
+
+# IntelliJ / IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.classpath
+.project
+.settings/
+*.launch
+
+# Logs / runtime / local data
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets / env (never commit)
+*.env
+.env
+.env.*
+*.key
+*.pem
+credentials*
+*.secret
