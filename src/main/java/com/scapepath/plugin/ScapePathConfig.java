@@ -20,7 +20,10 @@ import net.runelite.client.config.ConfigSection;
 @ConfigGroup(ScapePath.CONFIG_GROUP)
 public interface ScapePathConfig extends Config
 {
-	String KEY_SYNC_ENABLED = "syncEnabled";
+	// New, entirely separate config key. The historical "syncEnabled" key is
+	// deliberately NOT reused so existing users do not inherit their previous
+	// (default-on) value; this new key defaults to false and requires explicit opt-in.
+	String KEY_SYNC_ENABLED = "scapePathDataSyncEnabled";
 
 	@ConfigSection(
 		name = "Connection",
@@ -51,16 +54,16 @@ public interface ScapePathConfig extends Config
 
 	@ConfigItem(
 		keyName = KEY_SYNC_ENABLED,
-		name = "Automatic sync",
-		description = "When on and connected, ScapePath periodically syncs your verified account "
-			+ "state (skills, quests, diaries, inventory, equipment, bank, wealth) over HTTPS. "
-			+ "Turn off to sync only when you press \"Sync now\". Nothing but your own account "
-			+ "state is ever sent; no passwords, cookies or Jagex credentials.",
+		name = "Enable account data sync",
+		description = "When enabled and connected, syncs your ScapePath account data to the "
+			+ "ScapePath website. Turn off to sync only when you press \"Sync now\". Nothing but "
+			+ "your own account state is ever sent; no passwords, cookies or Jagex credentials.",
+		warning = "This plugin submits your IP address, and may submit various account data, to a 3rd-party server not controlled or verified by Runelite developers.",
 		section = accountSyncSection,
 		position = 0
 	)
 	default boolean syncEnabled()
 	{
-		return true;
+		return false;
 	}
 }
