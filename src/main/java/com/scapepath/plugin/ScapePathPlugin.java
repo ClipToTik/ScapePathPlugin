@@ -24,7 +24,7 @@ import com.scapepath.plugin.game.DiaryDefinitions;
 import com.scapepath.plugin.game.GameStateAccessor;
 import com.scapepath.plugin.game.RuneLiteGameStateAccessor;
 import com.scapepath.plugin.snapshot.SnapshotService;
-import com.scapepath.plugin.transport.OkHttpScapePathTransport;
+import com.scapepath.plugin.transport.GatedScapePathTransport;
 import com.scapepath.plugin.transport.ScapePathTransport;
 import com.scapepath.plugin.transport.SnapshotPayloadSerializer;
 import com.scapepath.plugin.ui.ScapePathPanel;
@@ -142,8 +142,10 @@ public class ScapePathPlugin extends Plugin
 	{
 		// Bind the read-only client seam to its live implementation.
 		binder.bind(GameStateAccessor.class).to(RuneLiteGameStateAccessor.class);
-		// Bind the network transport (OkHttp, RuneLite-bundled) and local token store.
-		binder.bind(ScapePathTransport.class).to(OkHttpScapePathTransport.class);
+		// Bind the network transport to the config-gated decorator. It wraps the real
+		// OkHttp transport (injected as the concrete class) and blocks every request when
+		// scapePathDataSyncEnabled is off — the single, authoritative networking gate.
+		binder.bind(ScapePathTransport.class).to(GatedScapePathTransport.class);
 		binder.bind(TokenStore.class).to(ConfigTokenStore.class);
 	}
 

@@ -25,10 +25,15 @@ import okhttp3.Response;
  * (injected — no new dependency) with a bounded per-call timeout so a hung request can
  * never wedge the caller. HTTPS only. It logs nothing sensitive: never the token, the
  * link code, or any payload byte — only coarse status categories at debug level.
+ *
+ * <p><b>Package-private by design.</b> Only {@link GatedScapePathTransport} (same package)
+ * may reference or inject this class, so no code in any other package can obtain the raw,
+ * ungated network transport — the config gate is the only reachable path to the network.
+ * Do not widen this visibility.</p>
  */
 @Slf4j
 @Singleton
-public class OkHttpScapePathTransport implements ScapePathTransport
+class OkHttpScapePathTransport implements ScapePathTransport
 {
 	private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 	private static final Duration CALL_TIMEOUT = Duration.ofSeconds(20);

@@ -4,6 +4,7 @@
  */
 package com.scapepath.plugin.connection;
 
+import com.scapepath.plugin.ScapePathConfig;
 import com.scapepath.plugin.snapshot.AccountSnapshot;
 import com.scapepath.plugin.snapshot.SnapshotSectionType;
 import com.scapepath.plugin.snapshot.data.IdentityData;
@@ -13,6 +14,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import javax.annotation.Nullable;
@@ -42,6 +44,14 @@ public class ConnectionManager
 	private final ScapePathTransport transport;
 	private final SnapshotPayloadSerializer serializer;
 	private final Executor executor;
+	/**
+	 * The opt-in networking gate ({@code scapePathDataSyncEnabled}). Consulted before any
+	 * path that can reach the network is even scheduled. This is defence-in-depth: the
+	 * transport itself ({@link com.scapepath.plugin.transport.GatedScapePathTransport}) is
+	 * the authoritative backstop that blocks the request at execution time regardless of
+	 * caller, so a disabled setting means zero outbound networking either way.
+	 */
+	private final BooleanSupplier syncEnabled;
 
 	private volatile ConnectionState state = ConnectionState.DISCONNECTED;
 	@Nullable private volatile String lastError;
@@ -57,19 +67,21 @@ public class ConnectionManager
 
 	@Inject
 	public ConnectionManager(TokenStore tokenStore, ScapePathTransport transport,
-		SnapshotPayloadSerializer serializer, ScheduledExecutorService executor)
+		SnapshotPayloadSerializer serializer, ScheduledExecutorService executor,
+		ScapePathConfig config)
 	{
-		this(tokenStore, transport, serializer, (Executor) executor);
+		this(tokenStore, transport, serializer, (Executor) executor, config::syncEnabled);
 	}
 
-	/** Test seam: inject a synchronous executor for deterministic unit tests. */
+	/** Test seam: inject a synchronous executor and an explicit gate for deterministic tests. */
 	ConnectionManager(TokenStore tokenStore, ScapePathTransport transport,
-		SnapshotPayloadSerializer serializer, Executor executor)
+		SnapshotPayloadSerializer serializer, Executor executor, BooleanSupplier syncEnabled)
 	{
 		this.tokenStore = tokenStore;
 		this.transport = transport;
 		this.serializer = serializer;
 		this.executor = executor;
+		this.syncEnabled = syncEnabled;
 	}
 
 	/* --------------------------------- wiring --------------------------------- */
@@ -129,6 +141,12 @@ public class ConnectionManager
 	 */
 	public synchronized void link(String rawCode)
 	{
+		if (!syncEnabled.getAsBoolean())
+		{
+			// Networking is opt-in and currently disabled: never reach the network.
+			fail("Turn on \"Enable account data sync\" in ScapePath settings to connect.");
+			return;
+		}
 		final String code = rawCode == null ? "" : rawCode.trim();
 		if (code.isEmpty())
 		{
@@ -188,7 +206,7 @@ public class ConnectionManager
 	/** Manual "Sync now". No-op (no request) when not linked. */
 	public void syncNow()
 	{
-		if (!tokenStore.has())
+		if (!syncEnabled.getAsBoolean() || !tokenStore.has())
 		{
 			return;
 		}
@@ -220,6 +238,12 @@ public class ConnectionManager
 
 	private void doSync()
 	{
+		if (!syncEnabled.getAsBoolean())
+		{
+			// Re-check the opt-in at execution time (not just when scheduled) so a sync
+			// queued while enabled cannot fire after the user disables the setting.
+			return;
+		}
 		final String token = tokenStore.get();
 		if (token == null || token.isEmpty())
 		{
@@ -294,7 +318,9 @@ public class ConnectionManager
 	public synchronized void disconnect()
 	{
 		final String token = tokenStore.get();
-		if (token != null && !token.isEmpty())
+		// Best-effort server revoke is a network op, so it is gated by the opt-in. The
+		// local token is always cleared below regardless — clearing is local, not network.
+		if (token != null && !token.isEmpty() && syncEnabled.getAsBoolean())
 		{
 			executor.execute(() -> transport.disconnect(token));
 		}

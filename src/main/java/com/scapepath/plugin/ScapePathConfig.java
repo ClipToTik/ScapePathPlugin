@@ -55,9 +55,11 @@ public interface ScapePathConfig extends Config
 	@ConfigItem(
 		keyName = KEY_SYNC_ENABLED,
 		name = "Enable account data sync",
-		description = "When enabled and connected, syncs your ScapePath account data to the "
-			+ "ScapePath website. Turn off to sync only when you press \"Sync now\". Nothing but "
-			+ "your own account state is ever sent; no passwords, cookies or Jagex credentials.",
+		description = "Master switch for all ScapePath networking. When OFF, this plugin makes "
+			+ "no outbound network requests of any kind — connecting, syncing and disconnecting "
+			+ "are all disabled. When ON and connected, it syncs your ScapePath account data to "
+			+ "the ScapePath website. Nothing but your own account state is ever sent; no "
+			+ "passwords, cookies or Jagex credentials.",
 		warning = "This plugin submits your IP address, and may submit various account data, to a 3rd-party server not controlled or verified by Runelite developers.",
 		section = accountSyncSection,
 		position = 0

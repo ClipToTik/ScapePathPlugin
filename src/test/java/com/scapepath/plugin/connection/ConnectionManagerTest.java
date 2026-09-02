@@ -104,9 +104,17 @@ public class ConnectionManagerTest
 		}
 	}
 
+	/** Manager with networking opt-in ENABLED (the normal case for most tests). */
 	private ConnectionManager manager(FakeTokenStore store, FakeTransport transport)
 	{
-		final ConnectionManager cm = new ConnectionManager(store, transport, SERIALIZER, DIRECT);
+		return manager(store, transport, () -> true);
+	}
+
+	/** Manager with an explicit opt-in gate, so tests can prove disabled == no network. */
+	private ConnectionManager manager(FakeTokenStore store, FakeTransport transport,
+		java.util.function.BooleanSupplier syncEnabled)
+	{
+		final ConnectionManager cm = new ConnectionManager(store, transport, SERIALIZER, DIRECT, syncEnabled);
 		cm.setSnapshotSupplier(snapshotSupplier());
 		return cm;
 	}
@@ -353,12 +361,128 @@ public class ConnectionManagerTest
 		assertEquals(ConnectionState.CONNECTED, cm.getState());
 	}
 
+	/* ---------------- opt-in networking gate (scapePathDataSyncEnabled) ---------------- */
+
+	@Test
+	public void gateDisabledConnectMakesNoNetworkRequest()
+	{
+		final FakeTransport transport = new FakeTransport();
+		final ConnectionManager cm = manager(new FakeTokenStore(null), transport, () -> false);
+
+		cm.link("ABCD-2345");
+
+		assertEquals(0, transport.linkCalls);
+		assertEquals(0, transport.syncCalls);
+		assertFalse(cm.isConnected());
+		assertEquals(ConnectionState.ERROR, cm.getState());
+	}
+
+	@Test
+	public void gateDisabledSyncNowMakesNoNetworkRequest()
+	{
+		final FakeTransport transport = new FakeTransport();
+		final ConnectionManager cm = manager(new FakeTokenStore("t"), transport, () -> false);
+
+		cm.syncNow();
+
+		assertEquals(0, transport.syncCalls);
+	}
+
+	@Test
+	public void gateDisabledAutoSyncMakesNoNetworkRequest()
+	{
+		final FakeTransport transport = new FakeTransport();
+		final ConnectionManager cm = manager(new FakeTokenStore("t"), transport, () -> false);
+
+		// Even if the caller passes enabled=true, the internal gate blocks it.
+		cm.maybeAutoSync(true);
+
+		assertEquals(0, transport.syncCalls);
+	}
+
+	@Test
+	public void gateDisabledDisconnectMakesNoNetworkRequestButClearsLocally()
+	{
+		final FakeTokenStore store = new FakeTokenStore("t");
+		final FakeTransport transport = new FakeTransport();
+		final ConnectionManager cm = manager(store, transport, () -> false);
+
+		cm.disconnect();
+
+		assertEquals(0, transport.disconnectCalls); // no network revoke
+		assertNull(store.get());                    // but local token still cleared
+		assertFalse(cm.isConnected());
+		assertEquals(ConnectionState.DISCONNECTED, cm.getState());
+	}
+
+	@Test
+	public void gateDisabledMidFlightBlocksScheduledSync()
+	{
+		// Genuinely model the race with a DEFERRED executor: the task is scheduled while
+		// the setting is ENABLED, then the user disables it, and only THEN does the task run.
+		// A gate that checked only at schedule time would let this request through.
+		final boolean[] enabled = {true};
+		final java.util.List<Runnable> queued = new java.util.ArrayList<>();
+		final Executor deferred = queued::add; // capture instead of running
+
+		final FakeTransport transport = new FakeTransport();
+		final ConnectionManager cm = new ConnectionManager(
+			new FakeTokenStore("t"), transport, SERIALIZER, deferred, () -> enabled[0]);
+		cm.setSnapshotSupplier(snapshotSupplier());
+
+		cm.syncNow();                       // scheduled while enabled -> task is queued
+		assertEquals(1, queued.size());
+		assertEquals(0, transport.syncCalls); // nothing has run yet
+
+		enabled[0] = false;                 // user disables AFTER scheduling, BEFORE execution
+		queued.forEach(Runnable::run);      // now the scheduled doSync actually runs
+
+		// doSync re-reads the gate at execution time, so no request is made.
+		assertEquals(0, transport.syncCalls);
+	}
+
+	@Test
+	public void gateDisabledBlocksRetryAfterNetworkError()
+	{
+		// A sync fails with a network error while enabled (would normally be retried),
+		// then the user disables the setting. The retry attempt must make no request.
+		final boolean[] enabled = {true};
+		final FakeTransport transport = new FakeTransport();
+		transport.syncResult = ScapePathTransport.SyncOutcome.of(ScapePathTransport.SyncOutcome.Kind.NETWORK_ERROR);
+		final ConnectionManager cm = manager(new FakeTokenStore("t"), transport, () -> enabled[0]);
+
+		cm.syncNow();                          // first attempt, enabled -> hits transport once
+		assertEquals(1, transport.syncCalls);
+		assertEquals(ConnectionState.OFFLINE, cm.getState());
+
+		enabled[0] = false;                    // user opts out before the retry
+		cm.syncNow();                          // retry
+		cm.maybeAutoSync(true);                // background retry
+		assertEquals(1, transport.syncCalls);  // no further requests
+	}
+
+	@Test
+	public void gateEnabledPreservesNormalNetworking()
+	{
+		final FakeTokenStore store = new FakeTokenStore(null);
+		final FakeTransport transport = new FakeTransport();
+		final ConnectionManager cm = manager(store, transport, () -> true);
+
+		cm.link("ABCD-2345");                 // connect
+		assertEquals(1, transport.linkCalls);
+		assertEquals(1, transport.syncCalls); // initial sync
+
+		cm.disconnect();                      // disconnect
+		assertEquals(1, transport.disconnectCalls);
+		assertFalse(cm.isConnected());
+	}
+
 	@Test
 	public void syncWithNullSnapshotMakesNoRequest()
 	{
 		final FakeTransport transport = new FakeTransport();
 		final ConnectionManager cm = new ConnectionManager(
-			new FakeTokenStore("t"), transport, SERIALIZER, DIRECT);
+			new FakeTokenStore("t"), transport, SERIALIZER, DIRECT, () -> true);
 		cm.setSnapshotSupplier(() -> null); // nothing collected yet
 		cm.syncNow();
 		assertEquals(0, transport.syncCalls);
