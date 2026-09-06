@@ -6,6 +6,7 @@ package com.scapepath.plugin.collector;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import com.scapepath.plugin.game.DiaryDefinitions;
@@ -16,6 +17,7 @@ import com.scapepath.plugin.snapshot.SourceFreshness;
 import com.scapepath.plugin.snapshot.data.AchievementDiaryData;
 import com.scapepath.plugin.snapshot.data.DiaryTierSnapshot;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 import net.runelite.api.gameval.VarbitID;
 import org.junit.Test;
@@ -116,5 +118,51 @@ public class AchievementDiaryCollectorTest
 		assertTrue(tier(d2, "Karamja", "Medium").isCompleted());
 		assertTrue(tier(d2, "Karamja", "Hard").isCompleted());
 		assertTrue(tier(d2, "Karamja", "Elite").isCompleted());
+	}
+
+	// --- V2: per-task completion (Karamja is the only region RuneLite exposes tasks for) ---
+
+	@Test
+	public void standardRegionsHaveNoTaskData()
+	{
+		AchievementDiaryData d = (AchievementDiaryData) collector.collect(CollectorContext.of(loggedIn())).getData();
+		// Null (not empty) so "no task data" stays distinct from "no tasks completed".
+		assertNull(tier(d, "Ardougne", "Easy").getTasks());
+		assertNull(tier(d, "Kandarin", "Elite").getTasks());
+		assertNull(tier(d, "Karamja", "Elite").getTasks()); // Elite: no per-task varbits exposed
+	}
+
+	@Test
+	public void karamjaTiersExposeTasksKeyedByStableId()
+	{
+		AchievementDiaryData d = (AchievementDiaryData) collector.collect(CollectorContext.of(loggedIn())).getData();
+		Map<String, Boolean> easy = tier(d, "Karamja", "Easy").getTasks();
+		assertNotNull(easy);
+		assertEquals(10, easy.size());
+		assertTrue(easy.containsKey("ATJUN_EASY_BANANA"));
+		assertEquals(19, tier(d, "Karamja", "Medium").getTasks().size());
+		assertEquals(10, tier(d, "Karamja", "Hard").getTasks().size());
+	}
+
+	@Test
+	public void karamjaTaskCompletionReflectsVarbitAndDefaultsFalse()
+	{
+		FakeGameStateAccessor game = loggedIn()
+			.varbit(VarbitID.ATJUN_EASY_BANANA, 1)
+			.varbit(VarbitID.ATJUN_EASY_SWING, 1);
+		AchievementDiaryData d = (AchievementDiaryData) collector.collect(CollectorContext.of(game)).getData();
+		Map<String, Boolean> easy = tier(d, "Karamja", "Easy").getTasks();
+		assertTrue(easy.get("ATJUN_EASY_BANANA"));
+		assertTrue(easy.get("ATJUN_EASY_SWING"));
+		assertFalse(easy.get("ATJUN_EASY_GOLD")); // unset -> not completed, never fabricated
+	}
+
+	@Test
+	public void karamjaTaskOrderIsDeterministic()
+	{
+		AchievementDiaryData d = (AchievementDiaryData) collector.collect(CollectorContext.of(loggedIn())).getData();
+		java.util.List<String> keys = new java.util.ArrayList<>(tier(d, "Karamja", "Easy").getTasks().keySet());
+		assertEquals("ATJUN_EASY_BANANA", keys.get(0));
+		assertEquals("ATJUN_EASY_JOGRE", keys.get(keys.size() - 1));
 	}
 }

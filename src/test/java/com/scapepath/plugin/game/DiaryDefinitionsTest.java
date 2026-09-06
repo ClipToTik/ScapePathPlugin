@@ -62,8 +62,38 @@ public class DiaryDefinitionsTest
 		for (DiaryDef def : DiaryDefinitions.all())
 		{
 			ids.add(def.getVarbitId());
+			// varbitIds() also watches every exposed per-task varbit (V2), so include them.
+			for (DiaryDefinitions.DiaryTaskDef task : def.getTasks())
+			{
+				ids.add(task.getVarbitId());
+			}
 		}
 		assertEquals(ids.size(), DiaryDefinitions.varbitIds().size());
 		assertTrue(DiaryDefinitions.varbitIds().containsAll(ids));
+	}
+
+	@Test
+	public void onlyKaramjaExposesTasksAndTaskCountsMatchApi()
+	{
+		int easy = 0, medium = 0, hard = 0;
+		for (DiaryDef def : DiaryDefinitions.all())
+		{
+			if (!def.getRegion().equals("Karamja"))
+			{
+				assertTrue(def.getRegion() + " " + def.getTier() + " must expose no tasks",
+					def.getTasks().isEmpty());
+				continue;
+			}
+			switch (def.getTier())
+			{
+				case "Easy": easy = def.getTasks().size(); break;
+				case "Medium": medium = def.getTasks().size(); break;
+				case "Hard": hard = def.getTasks().size(); break;
+				default: assertTrue("Karamja Elite exposes no tasks", def.getTasks().isEmpty());
+			}
+		}
+		assertEquals(10, easy);
+		assertEquals(19, medium);
+		assertEquals(10, hard);
 	}
 }

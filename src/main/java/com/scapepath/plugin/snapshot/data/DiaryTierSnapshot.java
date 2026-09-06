@@ -4,13 +4,18 @@
  */
 package com.scapepath.plugin.snapshot.data;
 
+import java.util.Map;
+import javax.annotation.Nullable;
 import lombok.Value;
 
 /**
  * Completion state of one Achievement Diary tier within a region.
  *
- * <p>The game exposes only completed / not-completed per tier, so there is no
- * intermediate state.</p>
+ * <p>{@link #completed} is the tier-level flag (present for every tier — backward
+ * compatible with the V1 payload). {@link #tasks}, when non-null, adds exact per-task
+ * completion keyed by the task's stable RuneLite identifier; it is {@code null} for tiers
+ * where RuneLite does not reliably expose per-task state, so "no task data" stays distinct
+ * from "no tasks completed".</p>
  */
 @Value
 public class DiaryTierSnapshot
@@ -23,4 +28,12 @@ public class DiaryTierSnapshot
 
 	/** {@code true} if this tier is fully complete. */
 	boolean completed;
+
+	/**
+	 * Ordered map of stable task id → completed, or {@code null} when per-task state is not
+	 * available for this tier. Never an empty map for an "available but zero" tier — the
+	 * collector only sets this when the tier genuinely exposes tasks.
+	 */
+	@Nullable
+	Map<String, Boolean> tasks;
 }

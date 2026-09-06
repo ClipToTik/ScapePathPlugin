@@ -8,6 +8,7 @@ import com.google.inject.Binder;
 import com.google.inject.Provides;
 import com.scapepath.plugin.collector.AchievementDiaryCollector;
 import com.scapepath.plugin.collector.BankCollector;
+import com.scapepath.plugin.collector.CollectionLogCollector;
 import com.scapepath.plugin.collector.CollectorRegistry;
 import com.scapepath.plugin.collector.EquipmentCollector;
 import com.scapepath.plugin.collector.IdentityCollector;
@@ -20,6 +21,7 @@ import com.scapepath.plugin.connection.ConnectionManager;
 import com.scapepath.plugin.connection.ConnectionState;
 import com.scapepath.plugin.connection.TokenStore;
 import com.scapepath.plugin.game.BankTracker;
+import com.scapepath.plugin.game.CollectionLogDefinitions;
 import com.scapepath.plugin.game.DiaryDefinitions;
 import com.scapepath.plugin.game.GameStateAccessor;
 import com.scapepath.plugin.game.RuneLiteGameStateAccessor;
@@ -117,6 +119,9 @@ public class ScapePathPlugin extends Plugin
 	private WealthCollector wealthCollector;
 
 	@Inject
+	private CollectionLogCollector collectionLogCollector;
+
+	@Inject
 	private BankTracker bankTracker;
 
 	@Inject
@@ -166,6 +171,7 @@ public class ScapePathPlugin extends Plugin
 		collectorRegistry.register(equipmentCollector);
 		collectorRegistry.register(bankCollector);
 		collectorRegistry.register(wealthCollector);
+		collectorRegistry.register(collectionLogCollector);
 
 		// Side panel: snapshot view + connection controls.
 		panel = new ScapePathPanel(payloadSerializer);
@@ -287,6 +293,7 @@ public class ScapePathPlugin extends Plugin
 		// Targeted, not blanket: only rebuild for quest-point (quest completion) or
 		// achievement-diary varbit changes, so we don't rebuild on every unrelated varbit.
 		if (event.getVarpId() == VarPlayerID.QP
+			|| CollectionLogDefinitions.varpIds().contains(event.getVarpId())
 			|| DiaryDefinitions.varbitIds().contains(event.getVarbitId()))
 		{
 			snapshotDirty = true;

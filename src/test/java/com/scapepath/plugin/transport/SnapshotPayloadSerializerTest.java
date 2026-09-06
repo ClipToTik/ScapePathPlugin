@@ -17,6 +17,7 @@ import com.scapepath.plugin.snapshot.SnapshotSectionType;
 import com.scapepath.plugin.snapshot.SourceFreshness;
 import com.scapepath.plugin.snapshot.data.AchievementDiaryData;
 import com.scapepath.plugin.snapshot.data.BankData;
+import com.scapepath.plugin.snapshot.data.CollectionLogData;
 import com.scapepath.plugin.snapshot.data.DiaryTierSnapshot;
 import com.scapepath.plugin.snapshot.data.EquipmentData;
 import com.scapepath.plugin.snapshot.data.IdentityData;
@@ -30,6 +31,8 @@ import com.scapepath.plugin.snapshot.data.WealthData;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import org.junit.Test;
 
 public class SnapshotPayloadSerializerTest
@@ -83,11 +86,61 @@ public class SnapshotPayloadSerializerTest
 	}
 
 	@Test
+	public void diaryTasksEmittedOnlyWhenPresent()
+	{
+		Map<String, Boolean> tasks = new LinkedHashMap<>();
+		tasks.put("ATJUN_EASY_BANANA", true);
+		tasks.put("ATJUN_EASY_GOLD", false);
+		AchievementDiaryData diaries = new AchievementDiaryData(
+			Arrays.asList(
+				new DiaryTierSnapshot("Ardougne", "Easy", true, null),   // tier-only (V1 shape)
+				new DiaryTierSnapshot("Karamja", "Easy", false, tasks)), // V2 task detail
+			1, 2);
+		AccountSnapshot snap = base()
+			.section(SnapshotSectionType.ACHIEVEMENT_DIARIES, section(
+				SnapshotSectionType.ACHIEVEMENT_DIARIES, SourceFreshness.COMPLETE, T, diaries))
+			.build();
+
+		JsonArray tiers = sections(serializer.toJson(snap)).getAsJsonObject("achievementDiaries")
+			.getAsJsonObject("data").getAsJsonArray("tiers");
+
+		JsonObject ardougne = tiers.get(0).getAsJsonObject();
+		assertFalse("tier-only region must not carry a tasks key", ardougne.has("tasks"));
+
+		JsonObject karamja = tiers.get(1).getAsJsonObject();
+		assertTrue(karamja.has("tasks"));
+		JsonObject kt = karamja.getAsJsonObject("tasks");
+		assertTrue(kt.get("ATJUN_EASY_BANANA").getAsBoolean());
+		assertFalse(kt.get("ATJUN_EASY_GOLD").getAsBoolean());
+	}
+
+	@Test
+	public void collectionLogSectionSerializes()
+	{
+		CollectionLogData clog = new CollectionLogData(573, 1500,
+			Arrays.asList(
+				new CollectionLogData.TabCount("BOSSES", 100, 400),
+				new CollectionLogData.TabCount("OTHER", 50, 300)));
+		AccountSnapshot snap = base()
+			.section(SnapshotSectionType.COLLECTION_LOG, section(
+				SnapshotSectionType.COLLECTION_LOG, SourceFreshness.COMPLETE, T, clog))
+			.build();
+
+		JsonObject data = sections(serializer.toJson(snap)).getAsJsonObject("collectionLog")
+			.getAsJsonObject("data");
+		assertEquals(573, data.get("obtained").getAsInt());
+		assertEquals(1500, data.get("total").getAsInt());
+		JsonArray tabs = data.getAsJsonArray("tabs");
+		assertEquals(2, tabs.size());
+		assertEquals("BOSSES", tabs.get(0).getAsJsonObject().get("id").getAsString());
+	}
+
+	@Test
 	public void deterministicForSameSnapshot()
 	{
 		AchievementDiaryData diaries = new AchievementDiaryData(
-			Arrays.asList(new DiaryTierSnapshot("Ardougne", "Easy", true),
-				new DiaryTierSnapshot("Karamja", "Elite", false)), 1, 2);
+			Arrays.asList(new DiaryTierSnapshot("Ardougne", "Easy", true, null),
+				new DiaryTierSnapshot("Karamja", "Elite", false, null)), 1, 2);
 		AccountSnapshot snap = base()
 			.section(SnapshotSectionType.ACHIEVEMENT_DIARIES, section(
 				SnapshotSectionType.ACHIEVEMENT_DIARIES, SourceFreshness.COMPLETE, T, diaries))
@@ -176,7 +229,7 @@ public class SnapshotPayloadSerializerTest
 	public void diarySerialization()
 	{
 		AchievementDiaryData diaries = new AchievementDiaryData(
-			Collections.singletonList(new DiaryTierSnapshot("Karamja", "Elite", true)), 1, 1);
+			Collections.singletonList(new DiaryTierSnapshot("Karamja", "Elite", true, null)), 1, 1);
 		AccountSnapshot snap = base().section(SnapshotSectionType.ACHIEVEMENT_DIARIES, section(
 			SnapshotSectionType.ACHIEVEMENT_DIARIES, SourceFreshness.COMPLETE, T, diaries)).build();
 		JsonObject t = sections(serializer.toJson(snap)).getAsJsonObject("achievementDiaries")

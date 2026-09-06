@@ -11,6 +11,7 @@ import com.scapepath.plugin.snapshot.SectionData;
 import com.scapepath.plugin.snapshot.SnapshotSectionType;
 import com.scapepath.plugin.snapshot.data.AchievementDiaryData;
 import com.scapepath.plugin.snapshot.data.BankData;
+import com.scapepath.plugin.snapshot.data.CollectionLogData;
 import com.scapepath.plugin.snapshot.data.DiaryTierSnapshot;
 import com.scapepath.plugin.snapshot.data.EquipmentData;
 import com.scapepath.plugin.snapshot.data.IdentityData;
@@ -68,6 +69,7 @@ public class SnapshotPayloadSerializer
 		m.put(SnapshotSectionType.EQUIPMENT, "equipment");
 		m.put(SnapshotSectionType.BANK, "bank");
 		m.put(SnapshotSectionType.WEALTH, "wealth");
+		m.put(SnapshotSectionType.COLLECTION_LOG, "collectionLog");
 		return m;
 	}
 
@@ -182,6 +184,10 @@ public class SnapshotPayloadSerializer
 		{
 			writeWealth(w, (WealthData) data);
 		}
+		else if (data instanceof CollectionLogData)
+		{
+			writeCollectionLog(w, (CollectionLogData) data);
+		}
 		else
 		{
 			// Unknown payload type: emit an empty object rather than leak class info.
@@ -256,6 +262,18 @@ public class SnapshotPayloadSerializer
 			w.name("region").value(t.getRegion());
 			w.name("tier").value(t.getTier());
 			w.name("completed").value(t.isCompleted());
+			// V2: exact per-task completion, emitted only where RuneLite exposes it. The key is
+			// omitted entirely for tier-only regions, so V1 consumers see the unchanged shape.
+			final Map<String, Boolean> tasks = t.getTasks();
+			if (tasks != null)
+			{
+				w.name("tasks").beginObject();
+				for (Map.Entry<String, Boolean> task : tasks.entrySet())
+				{
+					w.name(task.getKey()).value(task.getValue());
+				}
+				w.endObject();
+			}
 			w.endObject();
 		}
 		w.endArray();
@@ -297,6 +315,24 @@ public class SnapshotPayloadSerializer
 		w.name("gpOnHand").value(d.getGpOnHand());
 		w.name("bankGp").value(d.getBankGp());
 		w.name("estimatedBankValue").value(d.getEstimatedBankValue());
+		w.endObject();
+	}
+
+	private void writeCollectionLog(JsonWriter w, CollectionLogData d)
+	{
+		w.beginObject();
+		w.name("obtained").value(d.getObtained());
+		w.name("total").value(d.getTotal());
+		w.name("tabs").beginArray();
+		for (CollectionLogData.TabCount tab : d.getTabs())
+		{
+			w.beginObject();
+			w.name("id").value(tab.getId());
+			w.name("obtained").value(tab.getObtained());
+			w.name("total").value(tab.getTotal());
+			w.endObject();
+		}
+		w.endArray();
 		w.endObject();
 	}
 

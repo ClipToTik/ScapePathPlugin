@@ -8,6 +8,7 @@ import static org.junit.Assert.assertTrue;
 import com.google.gson.JsonParser;
 import com.scapepath.plugin.collector.AchievementDiaryCollector;
 import com.scapepath.plugin.collector.BankCollector;
+import com.scapepath.plugin.collector.CollectionLogCollector;
 import com.scapepath.plugin.collector.CollectorRegistry;
 import com.scapepath.plugin.collector.EquipmentCollector;
 import com.scapepath.plugin.collector.IdentityCollector;
@@ -45,6 +46,7 @@ public class PayloadSizeTest
 		r.register(new EquipmentCollector());
 		r.register(new BankCollector(tracker));
 		r.register(new WealthCollector(tracker));
+		r.register(new CollectionLogCollector());
 		return r;
 	}
 
@@ -91,6 +93,11 @@ public class PayloadSizeTest
 			.loggedIn("Zezima", 302, 0, 123456789L)
 			.allSkills(99, 13034431)
 			.varp(net.runelite.api.gameval.VarPlayerID.QP, 300)
+			// V2: Karamja per-task diary data + Collection Log counts populated.
+			.varbit(net.runelite.api.gameval.VarbitID.ATJUN_EASY_DONE, 2)
+			.varbit(net.runelite.api.gameval.VarbitID.ATJUN_EASY_BANANA, 1)
+			.varp(net.runelite.api.gameval.VarPlayerID.COLLECTION_COUNT_MAX, 1568)
+			.varp(net.runelite.api.gameval.VarPlayerID.COLLECTION_COUNT, 900)
 			.container(InventoryID.INV, bankOf(28))
 			.container(InventoryID.WORN, bankOf(11));
 		int bigBytes = measure("full + large bank (800 stacks)", fullRegistry(bigBank).buildSnapshot(rich));

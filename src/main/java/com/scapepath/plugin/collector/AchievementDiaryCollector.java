@@ -13,7 +13,9 @@ import com.scapepath.plugin.snapshot.data.AchievementDiaryData;
 import com.scapepath.plugin.snapshot.data.DiaryTierSnapshot;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import javax.inject.Singleton;
 
 /**
@@ -57,7 +59,22 @@ public class AchievementDiaryCollector implements AccountDataCollector
 			{
 				completed++;
 			}
-			tiers.add(new DiaryTierSnapshot(def.getRegion(), def.getTier(), done));
+
+			// Per-task state only where RuneLite reliably exposes it; otherwise null (never
+			// fabricated as all-false). Ordered so serialization is deterministic.
+			Map<String, Boolean> tasks = null;
+			if (!def.getTasks().isEmpty())
+			{
+				tasks = new LinkedHashMap<>();
+				for (DiaryDefinitions.DiaryTaskDef taskDef : def.getTasks())
+				{
+					tasks.put(taskDef.getId(),
+						game.getVarbitValue(taskDef.getVarbitId()) >= taskDef.getCompleteValue());
+				}
+				tasks = Collections.unmodifiableMap(tasks);
+			}
+
+			tiers.add(new DiaryTierSnapshot(def.getRegion(), def.getTier(), done, tasks));
 		}
 
 		final AchievementDiaryData data = new AchievementDiaryData(
