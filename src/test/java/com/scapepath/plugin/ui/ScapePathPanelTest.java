@@ -14,7 +14,6 @@ import com.scapepath.plugin.collector.SkillsCollector;
 import com.scapepath.plugin.connection.ConnectionState;
 import com.scapepath.plugin.game.FakeGameStateAccessor;
 import com.scapepath.plugin.snapshot.AccountSnapshot;
-import com.scapepath.plugin.transport.SnapshotPayloadSerializer;
 import java.awt.Component;
 import java.awt.Container;
 import java.time.Instant;
@@ -36,7 +35,7 @@ public class ScapePathPanelTest
 {
 	private static ScapePathPanel panel()
 	{
-		return new ScapePathPanel(new SnapshotPayloadSerializer());
+		return new ScapePathPanel();
 	}
 
 	@Test

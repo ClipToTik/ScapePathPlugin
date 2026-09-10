@@ -23,12 +23,9 @@ import com.scapepath.plugin.snapshot.data.QuestsData;
 import com.scapepath.plugin.snapshot.data.SkillData;
 import com.scapepath.plugin.snapshot.data.SkillsData;
 import com.scapepath.plugin.snapshot.data.WealthData;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import javax.annotation.Nullable;
 import javax.inject.Singleton;
@@ -103,35 +100,6 @@ public class SnapshotPayloadSerializer
 
 		w.endObject();
 		return w.toJson();
-	}
-
-	/**
-	 * Build a local, non-transmitted description of the payload (JSON, byte size, and
-	 * per-section freshness) for the diagnostic panel.
-	 */
-	public PayloadPreview preview(AccountSnapshot snapshot)
-	{
-		final String json = toJson(snapshot);
-		final int byteSize = json.getBytes(StandardCharsets.UTF_8).length;
-
-		final List<PayloadPreview.SectionSummary> summaries = new ArrayList<>();
-		for (Map.Entry<SnapshotSectionType, String> entry : SECTION_KEYS.entrySet())
-		{
-			final CollectedSection section = snapshot.getSection(entry.getKey());
-			if (section != null)
-			{
-				summaries.add(new PayloadPreview.SectionSummary(
-					entry.getValue(), section.getFreshness().name()));
-			}
-		}
-
-		return new PayloadPreview(
-			ScapePath.SCHEMA_VERSION,
-			snapshot.getPluginVersion(),
-			iso(snapshot.getTimestamp()),
-			json,
-			byteSize,
-			summaries);
 	}
 
 	private void writeSection(JsonWriter w, CollectedSection section)

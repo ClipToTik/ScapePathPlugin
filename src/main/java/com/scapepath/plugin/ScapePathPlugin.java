@@ -30,9 +30,7 @@ import com.scapepath.plugin.game.RuneLiteGameStateAccessor;
 import com.scapepath.plugin.snapshot.SnapshotService;
 import com.scapepath.plugin.transport.GatedScapePathTransport;
 import com.scapepath.plugin.transport.ScapePathTransport;
-import com.scapepath.plugin.transport.SnapshotPayloadSerializer;
 import com.scapepath.plugin.ui.ScapePathPanel;
-import java.awt.Color;
 import java.awt.image.BufferedImage;
 import java.time.Instant;
 import javax.inject.Inject;
@@ -56,15 +54,18 @@ import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
+import net.runelite.client.util.ImageUtil;
 
 /**
  * ScapePath — account progression companion/integration for RuneLite.
  *
- * <p>The plugin reads identity, skills, quests, diaries, inventory, equipment,
- * interface-gated bank, and derived wealth from the live client and displays them in a
- * side panel. It remains passive and read-only — no gameplay automation, no input. When
- * the user explicitly connects their ScapePath account (entering a one-time code), it
- * syncs the same normalized snapshot over HTTPS via {@link ConnectionManager}; nothing is
+ * <p>The plugin reads identity, skills, quests, diaries, combat achievements, inventory,
+ * equipment, interface-gated bank, and derived wealth from the live client. It remains
+ * passive and read-only — no gameplay automation, no input. The side panel is a lightweight
+ * connection/status surface, not a data dashboard; the collected state is synchronized to
+ * the ScapePath website (the reasoning layer) rather than mirrored in RuneLite. When the
+ * user explicitly connects their ScapePath account (entering a one-time code), the
+ * normalized snapshot is synced over HTTPS via {@link ConnectionManager}; nothing is
  * transmitted otherwise, and only the user's own account state is ever sent.</p>
  *
  * <p>Responsibilities kept here are lifecycle and orchestration only: registering
@@ -138,9 +139,6 @@ public class ScapePathPlugin extends Plugin
 	@Inject
 	private ClientToolbar clientToolbar;
 
-	@Inject
-	private SnapshotPayloadSerializer payloadSerializer;
-
 	private ScapePathPanel panel;
 	private NavigationButton navButton;
 
@@ -179,9 +177,8 @@ public class ScapePathPlugin extends Plugin
 		collectorRegistry.register(collectionLogCollector);
 		collectorRegistry.register(combatAchievementCollector);
 
-		// Side panel: snapshot view + connection controls.
-		panel = new ScapePathPanel(payloadSerializer);
-		panel.setRefreshHandler(this::requestRefresh);
+		// Side panel: lightweight status + connection controls.
+		panel = new ScapePathPanel();
 		panel.setConnectionHandlers(
 			connectionManager::link,
 			connectionManager::syncNow,
@@ -324,7 +321,7 @@ public class ScapePathPlugin extends Plugin
 		}
 	}
 
-	/** Schedule a snapshot rebuild on the client thread (used by the panel button). */
+	/** Schedule a snapshot rebuild on the client thread (used for the initial snapshot). */
 	private void requestRefresh()
 	{
 		clientThread.invoke(snapshotService::rebuild);
@@ -344,16 +341,10 @@ public class ScapePathPlugin extends Plugin
 
 	private static BufferedImage createIcon()
 	{
-		// Simple generated 16x16 icon so no image resource needs packaging yet.
-		final BufferedImage image = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB);
-		final java.awt.Graphics2D g = image.createGraphics();
-		g.setColor(new Color(0xE8, 0x8A, 0x1A));
-		g.fillRoundRect(1, 1, 14, 14, 4, 4);
-		g.setColor(Color.WHITE);
-		g.drawLine(4, 11, 8, 5);
-		g.drawLine(8, 5, 12, 11);
-		g.dispose();
-		return image;
+		// The canonical ScapePath graph/progression icon (same artwork as the Plugin Hub
+		// listing icon.png), packaged as a classpath resource. RuneLite scales it to the
+		// sidebar navigation size.
+		return ImageUtil.loadImageResource(ScapePathPlugin.class, "/com/scapepath/plugin/icon.png");
 	}
 
 	@Provides
