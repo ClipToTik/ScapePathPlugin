@@ -27,6 +27,7 @@ same payload is produced by the deterministic serializer whether or not you sync
     "skills":             { "freshness": "COMPLETE",    "collectedAt": "…", "data": { … } },
     "quests":             { "freshness": "COMPLETE",    "collectedAt": "…", "data": { … } },
     "achievementDiaries": { "freshness": "COMPLETE",    "collectedAt": "…", "data": { … } },
+    "combatAchievements": { "freshness": "COMPLETE",    "collectedAt": "…", "data": { … } },
     "inventory":          { "freshness": "COMPLETE",    "collectedAt": "…", "data": { … } },
     "equipment":          { "freshness": "COMPLETE",    "collectedAt": "…", "data": { … } },
     "bank":               { "freshness": "UNAVAILABLE", "collectedAt": "…", "data": null   },
@@ -68,6 +69,51 @@ exact per-task completion:
 - **Reconstruction.** For a tier with `tasks`, the website can reconstruct completed/remaining
   tasks and cross-check the tier `completed` flag. For a tier without `tasks`, only tier-level
   completion is known — exactly the V1 guarantee.
+
+### Combat achievements (per-task, tier aggregates)
+
+`schemaVersion` stays **1** — additive. The `combatAchievements.data` reports player **state**
+only; ScapePath owns all static knowledge (which task belongs to which tier/boss, its point
+value, and the full task universe used to compute "missing").
+
+```json
+{
+  "points": 435,
+  "completedCount": 33,
+  "enumeratedTasks": 398,
+  "tiers": [
+    { "tier": "EASY",        "completed": 33, "status": 2, "threshold": 33 },
+    { "tier": "MEDIUM",      "completed": 0,  "status": 0, "threshold": 115 },
+    { "tier": "HARD",        "completed": 0,  "status": 0, "threshold": 304 },
+    { "tier": "ELITE",       "completed": 0,  "status": 0, "threshold": 820 },
+    { "tier": "MASTER",      "completed": 0,  "status": 0, "threshold": 1465 },
+    { "tier": "GRANDMASTER", "completed": 0,  "status": 0, "threshold": 2005 }
+  ],
+  "completedTaskIds": [
+    "CA_TASK_ARMADYL_KILLCOUNT_1_COMPLETED",
+    "CA_TASK_BANDOS_KILLCOUNT_1_COMPLETED"
+  ]
+}
+```
+
+- **Task identity.** Unlike the Collection Log, RuneLite's `gameval` exposes a stable, named
+  per-task completion varbit for **every** Combat Achievement task
+  (`CA_TASK_<ACTIVITY>_<TYPE>_<N>_COMPLETED`). The task id is that `VarbitID` **constant name**;
+  the website must key on it, never on a display string. These are account-stored varbits (not
+  interface-gated) and reliable whenever logged in.
+- **`completedTaskIds`.** Only completed tasks are listed, so the array scales with progress
+  (empty for a new account, up to `enumeratedTasks` for a maxed one). The website derives the
+  **missing** set by subtracting this from its own canonical task list.
+- **Tier aggregates.** `completed`, `status` (raw game value — ScapePath interprets it), and
+  `threshold` (points needed for the tier) come straight from account varbits, so "almost
+  complete this tier" reasoning works without the website's task→tier map being perfectly in
+  sync with the current game update. `points` is total CA points; `completedCount` is the sum
+  of the per-tier counts (game-authoritative).
+- **`enumeratedTasks`** is the number of tasks *this plugin build* knows about (398), not the
+  authoritative game total — it lets the website detect drift when a game update adds tasks the
+  plugin has not yet been rebuilt against.
+- **Availability.** `COMPLETE` whenever logged in (a genuine "0 completed" on a fresh account
+  is real state); `UNAVAILABLE`, `data: null` when logged out.
 
 ### Collection log (foundation — progress counts)
 
@@ -115,7 +161,9 @@ no item metadata (names, prices, sources are ScapePath's responsibility).
 RSN · account hash · account type · world · per-skill level & XP, total level/XP, combat
 level · every quest (stable id, name, state) + quest points + counts · every achievement
 diary region/tier completion + counts, plus exact per-task completion where RuneLite exposes
-it (Karamja) keyed by stable task id · Collection Log slot counts (overall + per tab) ·
+it (Karamja) keyed by stable task id · Combat Achievement total points, per-tier
+completed-task counts/status/threshold, and the stable ids of every completed task ·
+Collection Log slot counts (overall + per tab) ·
 inventory items (id/qty/slot) · equipment (id/qty/slot) · bank items + unique count + bank
 coins + estimated value + freshness + timestamp + source · GP on hand, bank GP, estimated
 bank value · plugin version, schema version, snapshot timestamp, per-section
@@ -152,9 +200,11 @@ Deterministic serializer, UTF-8 (from `PayloadSizeTest`):
 
 | Scenario | Size |
 |---|---|
-| Normal account (all skills, 211 quests, 48 diary tiers **+ 39 Karamja tasks**, small inv/equip, no bank, collectionLog UNAVAILABLE) | ~19.4 KB (19,903 bytes) |
-| Full account + large bank (~800 distinct stacks), Karamja tasks + collectionLog counts populated | ~50.4 KB (51,632 bytes) |
+| Normal account (all skills, 211 quests, 48 diary tiers **+ 39 Karamja tasks**, CA tier scaffold + 0 tasks done, small inv/equip, no bank, collectionLog UNAVAILABLE) | ~20.0 KB (20,431 bytes) |
+| Full account + large bank (~800 distinct stacks) + **all 398 CA tasks complete** + Karamja tasks + collectionLog counts | ~67.7 KB (69,365 bytes) |
 
-Quests (211) and diaries dominate the baseline; bank scales with distinct stacks. The V2
-additions (39 always-present Karamja task booleans + the collection-log counts section) add
-~1.2 KB to the baseline — modest, no optimization needed at this stage.
+Quests (211) and diaries dominate the baseline; bank scales with distinct stacks, and the
+`combatAchievements.completedTaskIds` array scales with CA progress. The CA section adds only
+the small tier scaffold (~0.6 KB) to a new account and ~17 KB at the theoretical maximum (all
+398 task ids). Since only completed ids are sent, a typical account is far below that. No
+optimization needed at this stage.

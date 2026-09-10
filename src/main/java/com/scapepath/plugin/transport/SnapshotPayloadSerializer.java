@@ -12,6 +12,7 @@ import com.scapepath.plugin.snapshot.SnapshotSectionType;
 import com.scapepath.plugin.snapshot.data.AchievementDiaryData;
 import com.scapepath.plugin.snapshot.data.BankData;
 import com.scapepath.plugin.snapshot.data.CollectionLogData;
+import com.scapepath.plugin.snapshot.data.CombatAchievementData;
 import com.scapepath.plugin.snapshot.data.DiaryTierSnapshot;
 import com.scapepath.plugin.snapshot.data.EquipmentData;
 import com.scapepath.plugin.snapshot.data.IdentityData;
@@ -65,6 +66,7 @@ public class SnapshotPayloadSerializer
 		m.put(SnapshotSectionType.SKILLS, "skills");
 		m.put(SnapshotSectionType.QUESTS, "quests");
 		m.put(SnapshotSectionType.ACHIEVEMENT_DIARIES, "achievementDiaries");
+		m.put(SnapshotSectionType.COMBAT_ACHIEVEMENTS, "combatAchievements");
 		m.put(SnapshotSectionType.INVENTORY, "inventory");
 		m.put(SnapshotSectionType.EQUIPMENT, "equipment");
 		m.put(SnapshotSectionType.BANK, "bank");
@@ -187,6 +189,10 @@ public class SnapshotPayloadSerializer
 		else if (data instanceof CollectionLogData)
 		{
 			writeCollectionLog(w, (CollectionLogData) data);
+		}
+		else if (data instanceof CombatAchievementData)
+		{
+			writeCombatAchievements(w, (CombatAchievementData) data);
 		}
 		else
 		{
@@ -331,6 +337,32 @@ public class SnapshotPayloadSerializer
 			w.name("obtained").value(tab.getObtained());
 			w.name("total").value(tab.getTotal());
 			w.endObject();
+		}
+		w.endArray();
+		w.endObject();
+	}
+
+	private void writeCombatAchievements(JsonWriter w, CombatAchievementData d)
+	{
+		w.beginObject();
+		w.name("points").value(d.getPoints());
+		w.name("completedCount").value(d.getCompletedCount());
+		w.name("enumeratedTasks").value(d.getEnumeratedTasks());
+		w.name("tiers").beginArray();
+		for (CombatAchievementData.TierProgress t : d.getTiers())
+		{
+			w.beginObject();
+			w.name("tier").value(t.getTier());
+			w.name("completed").value(t.getCompleted());
+			w.name("status").value(t.getStatus());
+			w.name("threshold").value(t.getThreshold());
+			w.endObject();
+		}
+		w.endArray();
+		w.name("completedTaskIds").beginArray();
+		for (String id : d.getCompletedTaskIds())
+		{
+			w.value(id);
 		}
 		w.endArray();
 		w.endObject();

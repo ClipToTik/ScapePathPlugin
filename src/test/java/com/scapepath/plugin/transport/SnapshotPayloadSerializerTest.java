@@ -136,6 +136,44 @@ public class SnapshotPayloadSerializerTest
 	}
 
 	@Test
+	public void combatAchievementsSectionSerializes()
+	{
+		com.scapepath.plugin.snapshot.data.CombatAchievementData ca =
+			new com.scapepath.plugin.snapshot.data.CombatAchievementData(
+				435, 33, 398,
+				Arrays.asList(
+					new com.scapepath.plugin.snapshot.data.CombatAchievementData.TierProgress(
+						"EASY", 33, 2, 33),
+					new com.scapepath.plugin.snapshot.data.CombatAchievementData.TierProgress(
+						"MEDIUM", 0, 0, 115)),
+				Arrays.asList(
+					"CA_TASK_ARMADYL_KILLCOUNT_1_COMPLETED",
+					"CA_TASK_BANDOS_KILLCOUNT_1_COMPLETED"));
+		AccountSnapshot snap = base()
+			.section(SnapshotSectionType.COMBAT_ACHIEVEMENTS, section(
+				SnapshotSectionType.COMBAT_ACHIEVEMENTS, SourceFreshness.COMPLETE, T, ca))
+			.build();
+
+		JsonObject data = sections(serializer.toJson(snap)).getAsJsonObject("combatAchievements")
+			.getAsJsonObject("data");
+		assertEquals(435, data.get("points").getAsInt());
+		assertEquals(33, data.get("completedCount").getAsInt());
+		assertEquals(398, data.get("enumeratedTasks").getAsInt());
+
+		JsonArray tiers = data.getAsJsonArray("tiers");
+		assertEquals(2, tiers.size());
+		JsonObject easy = tiers.get(0).getAsJsonObject();
+		assertEquals("EASY", easy.get("tier").getAsString());
+		assertEquals(33, easy.get("completed").getAsInt());
+		assertEquals(2, easy.get("status").getAsInt());
+		assertEquals(33, easy.get("threshold").getAsInt());
+
+		JsonArray ids = data.getAsJsonArray("completedTaskIds");
+		assertEquals(2, ids.size());
+		assertEquals("CA_TASK_ARMADYL_KILLCOUNT_1_COMPLETED", ids.get(0).getAsString());
+	}
+
+	@Test
 	public void deterministicForSameSnapshot()
 	{
 		AchievementDiaryData diaries = new AchievementDiaryData(

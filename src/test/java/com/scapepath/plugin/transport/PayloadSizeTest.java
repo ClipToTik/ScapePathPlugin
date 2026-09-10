@@ -9,7 +9,9 @@ import com.google.gson.JsonParser;
 import com.scapepath.plugin.collector.AchievementDiaryCollector;
 import com.scapepath.plugin.collector.BankCollector;
 import com.scapepath.plugin.collector.CollectionLogCollector;
+import com.scapepath.plugin.collector.CombatAchievementCollector;
 import com.scapepath.plugin.collector.CollectorRegistry;
+import com.scapepath.plugin.game.CombatAchievementDefinitions;
 import com.scapepath.plugin.collector.EquipmentCollector;
 import com.scapepath.plugin.collector.IdentityCollector;
 import com.scapepath.plugin.collector.InventoryCollector;
@@ -47,7 +49,16 @@ public class PayloadSizeTest
 		r.register(new BankCollector(tracker));
 		r.register(new WealthCollector(tracker));
 		r.register(new CollectionLogCollector());
+		r.register(new CombatAchievementCollector());
 		return r;
+	}
+
+	private static void completeAllCombatAchievements(FakeGameStateAccessor game)
+	{
+		for (CombatAchievementDefinitions.TaskDef task : CombatAchievementDefinitions.tasks())
+		{
+			game.varbit(task.getVarbitId(), 1);
+		}
 	}
 
 	private static List<ItemSnapshot> bankOf(int distinctItems)
@@ -100,7 +111,8 @@ public class PayloadSizeTest
 			.varp(net.runelite.api.gameval.VarPlayerID.COLLECTION_COUNT, 900)
 			.container(InventoryID.INV, bankOf(28))
 			.container(InventoryID.WORN, bankOf(11));
-		int bigBytes = measure("full + large bank (800 stacks)", fullRegistry(bigBank).buildSnapshot(rich));
+		completeAllCombatAchievements(rich);
+		int bigBytes = measure("full + large bank (800 stacks) + all 398 CA tasks", fullRegistry(bigBank).buildSnapshot(rich));
 
 		// Sanity bounds (not tight — just guard against pathological blow-ups).
 		assertTrue("normal payload should be well under 64KB", normalBytes < 64 * 1024);
